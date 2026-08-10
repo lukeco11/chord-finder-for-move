@@ -18,6 +18,7 @@ mkdir -p "$STAGE"
 cp "$ROOT/src/module.json" "$STAGE/module.json"
 cp "$ROOT/src/ui.js" "$STAGE/ui.js"
 cp "$ROOT/src/harmony.mjs" "$STAGE/harmony.mjs"
+cp "$ROOT/src/keyboard.mjs" "$STAGE/keyboard.mjs"
 cp "$ROOT/src/ui_state.mjs" "$STAGE/ui_state.mjs"
 cp "$ROOT/src/help.json" "$STAGE/help.json"
 cp "$ROOT/dist/dsp.so" "$STAGE/dsp.so"
@@ -26,4 +27,4 @@ cp "$ROOT/README.md" "$STAGE/README.md"
 cp "$ROOT/LICENSE" "$STAGE/LICENSE"
 
 (cd "$ROOT/dist" && tar -czf chord-finder-module.tar.gz chord-finder)
-tar -tzf "$ROOT/dist/chord-finder-module.tar.gz"
+"$ROOT/scripts/verify-package.sh" "$ROOT/dist/chord-finder-module.tar.gz"

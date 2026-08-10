@@ -25,6 +25,7 @@ node -e '
 
 test -f src/ui.js
 test -f src/harmony.mjs
+test -f src/keyboard.mjs
 test -f src/dsp/chord_finder.c
 test -f src/install_swap.c
 test -f src/help.json
@@ -32,7 +33,7 @@ test -f release.json
 test -f LICENSE
 
 node --check src/ui.js
-sh -n scripts/build.sh scripts/build-dsp.sh scripts/package.sh scripts/install.sh
+sh -n scripts/build.sh scripts/build-dsp.sh scripts/package.sh scripts/install.sh scripts/verify-package.sh
 
 grep -q 'settings.json' scripts/install.sh
 grep -q 'chord-finder.install' scripts/install.sh
@@ -41,3 +42,9 @@ grep -q 'install-swap' scripts/install.sh
 grep -q 'RENAME_EXCHANGE' src/install_swap.c
 grep -q 'ARM aarch64' scripts/build-dsp.sh
 grep -q 'ARM aarch64' scripts/package.sh
+grep -q 'keyboard.mjs' scripts/package.sh
+grep -q 'verify-package.sh' scripts/package.sh
+
+if [ -f dist/chord-finder-module.tar.gz ]; then
+  ./scripts/verify-package.sh
+fi

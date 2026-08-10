@@ -34,6 +34,23 @@
       ]
     },
     {
+      "title": "Piano Display",
+      "lines": [
+        "The lower display",
+        "shows one octave.",
+        "Filled white keys",
+        "and inverted black",
+        "keys are sounding.",
+        "",
+        "Bottom markers:",
+        "left is the bass,",
+        "center is the root,",
+        "right is the top.",
+        "It follows auditions",
+        "and loop playback."
+      ]
+    },
+    {
       "title": "Progression",
       "lines": [
         "Shift + Step stores",

@@ -27,6 +27,8 @@ audition and leave the firmware path unchanged.
 - Play and Record passthrough to Move transport
 - ROOT/NEXT/VOICE mode cycling and stable right-pad assignments during audition
 - Shift + left-pad top-note constraints and empty-step gap suggestions
+- Piano display highlights for left notes, chord auditions, inversions, and loop steps
+- Bass, root, and top markers on both white and black keys
 - Candidate refresh while a chord remains held
 - Rapid pad replacement and shared chord tones
 - Strum replacement before delayed notes have fired

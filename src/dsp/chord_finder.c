@@ -54,6 +54,7 @@ typedef struct {
     uint8_t loop_length;
     int8_t displayed_step;
     int32_t samples_to_next;
+    uint32_t loop_cycle;
     uint32_t dropped;
     uint32_t last_seq;
     uint8_t has_last_seq;
@@ -326,6 +327,7 @@ static int loop_step_samples(chord_finder_t *s) {
 static void fire_loop_step(chord_finder_t *s) {
     int step_samples = loop_step_samples(s);
     slot_t *slot;
+    s->loop_cycle++;
     if (s->loop_length == 0) {
         s->displayed_step = -1;
         s->samples_to_next += step_samples;
@@ -479,8 +481,8 @@ static int get_param(void *instance, const char *key, char *buf, int buf_len) {
     chord_finder_t *s = (chord_finder_t *)instance;
     if (!s || !key || !buf || buf_len <= 0 || strcmp(key, "state") != 0) return -1;
     return snprintf(buf, (size_t)buf_len,
-                    "{\"v\":1,\"running\":%d,\"step\":%d,\"length\":%d,\"route\":%d,\"channel\":%d,\"activeOwners\":%d,\"pendingOffs\":%d,\"dropped\":%u,\"ack\":%u}",
-                    s->running, s->displayed_step, s->loop_length, s->route,
+                    "{\"v\":1,\"running\":%d,\"step\":%d,\"cycle\":%u,\"length\":%d,\"route\":%d,\"channel\":%d,\"activeOwners\":%d,\"pendingOffs\":%d,\"dropped\":%u,\"ack\":%u}",
+                    s->running, s->displayed_step, s->loop_cycle, s->loop_length, s->route,
                     s->channel, active_owner_count(s), pending_off_count(s),
                     s->dropped, s->last_seq);
 }

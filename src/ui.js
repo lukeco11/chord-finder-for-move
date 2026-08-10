@@ -15,6 +15,10 @@ import {
   SCALES, buildChordNotes, generateCandidates, getScale, leftPadNote, nameChord,
 } from './harmony.mjs';
 import {
+  BLACK_KEYS, WHITE_KEYS, clearDisplayVoices, createDisplayVoiceState,
+  keyboardKeyForPitchClass, keyboardState, startDisplayVoice, stopDisplayVoice,
+} from './keyboard.mjs';
+import {
   appendProgressionChord, assignProgressionSlot, createUiState,
   leftPadIndex, migrateSettings, nextExplorationMode, pressCandidate,
   progressionLength, progressionNeighbors, releaseCandidate, rightPadIndex, ROUTES, takeLedBatch,
@@ -31,11 +35,18 @@ const MENU_ITEMS = ['MIDI CHANNEL', 'OUTPUT ROUTE', 'PREVIEW ROUTE', 'GLOBAL GAT
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 const MODE_LABELS = { root: 'ROOT', next: 'NEXT', voice: 'VOICE' };
 const PARAMETER_LABELS = ['KEY', 'SCALE', 'COLOR', 'EXT', 'INV', 'SPREAD', 'STRUM', 'STEP'];
+const PIANO_Y = 40;
+const PIANO_HEIGHT = 24;
+const BLACK_KEY_HEIGHT = 14;
+const LOOP_DISPLAY_OWNER = 'loop';
 
 let state = createUiState();
 let focusPc = null;
 let currentChord = null;
 let currentNotes = [];
+let displayNotes = [];
+let displayRootPc = null;
+let displayVoices = createDisplayVoiceState();
 let recentChords = [];
 let lastAuditioned = null;
 let displayChord = null;
@@ -44,6 +55,7 @@ let currentLabel = 'Choose a note';
 let currentCategory = 'SCALE ROOT';
 let running = false;
 let loopStep = -1;
+let loopCycle = -1;
 let selectedSlot = -1;
 let deleteHeld = false;
 let shiftHeld = false;
@@ -304,22 +316,75 @@ function modeContext() {
   return `NEXT ${currentChord ? nameChord(currentChord, { key: state.settings.key, scaleId: state.settings.scaleId }) : 'START'}`;
 }
 
+function displayRootPitchClass() {
+  return displayRootPc;
+}
+
+function markerColor(key, sounding) {
+  if (!sounding) return 1;
+  return key.black ? 1 : 0;
+}
+
+function drawPianoMarkers(keyboard) {
+  const markers = [
+    { pitchClass: keyboard.bassPitchClass, position: 'left' },
+    { pitchClass: keyboard.rootPitchClass, position: 'center' },
+    { pitchClass: keyboard.topPitchClass, position: 'right' },
+  ];
+  for (const marker of markers) {
+    const key = keyboardKeyForPitchClass(marker.pitchClass);
+    if (!key) continue;
+    const sounding = keyboard.counts[key.pitchClass] > 0;
+    const y = PIANO_Y + (key.black ? BLACK_KEY_HEIGHT : PIANO_HEIGHT) - 3;
+    let x = key.x + 2;
+    let width = 2;
+    if (key.black) {
+      x = key.x + 1;
+      if (marker.position === 'center') x = key.x + 4;
+      if (marker.position === 'right') x = key.x + 7;
+    } else if (marker.position === 'center') {
+      x = key.x + Math.floor(key.width / 2) - 2;
+      width = 5;
+    }
+    if (!key.black && marker.position === 'right') x = key.x + key.width - 4;
+    fill_rect(x, y, width, 2, markerColor(key, sounding));
+  }
+}
+
+function drawPianoKeyboard() {
+  const keyboard = keyboardState(displayNotes, displayRootPitchClass());
+  for (const key of WHITE_KEYS) {
+    const sounding = keyboard.counts[key.pitchClass] > 0;
+    if (sounding) fill_rect(key.x + 1, PIANO_Y + 1, key.width - 2, PIANO_HEIGHT - 2, 1);
+    draw_rect(key.x, PIANO_Y, key.width, PIANO_HEIGHT, 1);
+    print(key.x + Math.floor(key.width / 2) - 2, PIANO_Y + 14, key.label, sounding ? 0 : 1);
+  }
+  for (const key of BLACK_KEYS) {
+    const sounding = keyboard.counts[key.pitchClass] > 0;
+    fill_rect(key.x, PIANO_Y, key.width, BLACK_KEY_HEIGHT, sounding ? 0 : 1);
+    if (sounding) draw_rect(key.x, PIANO_Y, key.width, BLACK_KEY_HEIGHT, 1);
+  }
+  drawPianoMarkers(keyboard);
+}
+
 function drawMain() {
   const scale = getScale(state.settings.scaleId);
   const keyName = KEY_NAMES[state.settings.key];
   clear_screen();
   print(0, 0, truncate(keyName + ' ' + scale.name, 15), 1);
   print(94, 0, truncate(ROUTE_SHORT[state.settings.previewRoute] + ' C' + (state.settings.channel + 1), 5), 1);
-  print(0, 14, truncate(overlayText || currentLabel, 21), 1);
+  print(0, 10, truncate(overlayText || currentLabel, 21), 1);
   const top = topNotePc === null ? '' : `  TOP ${KEY_NAMES[topNotePc]}`;
-  print(0, 31, truncate(modeContext() + top, 21), 1);
+  print(0, 20, truncate(modeContext() + top, 21), 1);
   const category = displayChord && romanNumeral(displayChord)
     ? `${currentCategory} ${romanNumeral(displayChord)}`
     : currentCategory;
-  print(0, 43, truncate(category.toUpperCase(), 20), 1);
-  print(0, 52, 'OCT ' + String(state.settings.octave), 1);
-  print(45, 52, RATE_LABELS[state.settings.rate], 1);
-  print(78, 52, running ? `PLAY ${loopStep + 1}/${progressionLength(state.progression)}` : 'LOOP STOP', 1);
+  print(0, 30, truncate(category.toUpperCase(), 10), 1);
+  const transport = running && loopStep >= 0
+    ? `P${loopStep + 1}/${progressionLength(state.progression)}`
+    : (running ? 'WAIT' : 'STOP');
+  print(62, 30, truncate(`O${state.settings.octave} ${RATE_LABELS[state.settings.rate]} ${transport}`, 11), 1);
+  drawPianoKeyboard();
 }
 
 function draw() {
@@ -330,6 +395,35 @@ function draw() {
 
 function announceCurrent() {
   announce(currentLabel + ', ' + currentCategory);
+}
+
+function applyDisplaySnapshot(snapshot) {
+  displayNotes = snapshot.notes;
+  displayChord = snapshot.chord;
+  displayRootPc = snapshot.rootPitchClass;
+  if (snapshot.active) {
+    currentLabel = snapshot.label;
+    currentCategory = snapshot.category;
+  }
+  dirty = true;
+  return snapshot;
+}
+
+function showDisplayVoice(owner, voice) {
+  return applyDisplaySnapshot(startDisplayVoice(displayVoices, owner, voice));
+}
+
+function hideDisplayVoice(owner) {
+  return applyDisplaySnapshot(stopDisplayVoice(displayVoices, owner));
+}
+
+function clearVisualVoices(label, category) {
+  applyDisplaySnapshot(clearDisplayVoices(displayVoices));
+  liveOwners.clear();
+  heldLeft.fill(false);
+  state.heldCandidates.fill(null);
+  if (label) currentLabel = label;
+  if (category) currentCategory = category;
 }
 
 function playVoice(owner, notes, velocity) {
@@ -343,6 +437,7 @@ function playVoice(owner, notes, velocity) {
 function stopVoice(owner) {
   sendCommand({ op: 'voice_off', owner }, true);
   liveOwners.delete(owner);
+  hideDisplayVoice(owner);
 }
 
 function handleLeftPad(index, pressed, velocity) {
@@ -351,10 +446,13 @@ function handleLeftPad(index, pressed, velocity) {
     heldLeft[index] = true;
     focusPc = note % 12;
     state.settings.mode = 'root';
-    displayChord = null;
     currentLabel = 'Root ' + KEY_NAMES[focusPc];
     currentCategory = 'ROOT VOICINGS';
     playVoice(index, [note], velocity);
+    showDisplayVoice(index, {
+      notes: [note], rootPitchClass: focusPc,
+      label: currentLabel, category: currentCategory,
+    });
     refreshCandidates();
     scheduleSave();
   } else {
@@ -396,7 +494,11 @@ function storeChordAt(index, chord) {
     const neighbors = progressionNeighbors(state.progression, index);
     currentChord = neighbors.previousChord ? semanticChord(neighbors.previousChord) : null;
     currentNotes = currentChord ? slotNotes(currentChord) : [];
-    displayChord = null;
+    if (displayVoices.voices.size === 0) {
+      displayChord = null;
+      displayNotes = [];
+      displayRootPc = null;
+    }
     currentLabel = `Fill step ${index + 1}`;
     currentCategory = neighbors.nextChord ? 'BETWEEN CHORDS' : 'NEXT CHORD';
     refreshCandidates();
@@ -430,10 +532,16 @@ function handleRightPad(index, pressed, velocity) {
     if (!chord) return;
     const snapshot = pressCandidate(state, index, chord);
     lastAuditioned = snapshot;
-    displayChord = semanticChord(snapshot);
     currentLabel = snapshot.label;
     currentCategory = snapshot.sourceClass;
     playVoice(16 + index, snapshot.notes, velocity);
+    showDisplayVoice(16 + index, {
+      notes: snapshot.notes,
+      chord: semanticChord(snapshot),
+      rootPitchClass: wrap(state.settings.key + snapshot.tonicOffset, 12),
+      label: currentLabel,
+      category: currentCategory,
+    });
     if (captureArmed) appendChord(snapshot);
     dirty = true;
     announceCurrent();
@@ -476,9 +584,15 @@ function handleStep(index, pressed, velocity) {
       const notes = slotNotes(stored);
       playVoice(40 + index, notes, velocity);
       lastAuditioned = { ...stored, notes, label: nameChord(stored, { key: state.settings.key, scaleId: state.settings.scaleId }) };
-      displayChord = semanticChord(lastAuditioned);
       currentLabel = lastAuditioned.label;
       currentCategory = 'PROGRESSION ' + (index + 1);
+      showDisplayVoice(40 + index, {
+        notes,
+        chord: semanticChord(lastAuditioned),
+        rootPitchClass: wrap(state.settings.key + lastAuditioned.tonicOffset, 12),
+        label: currentLabel,
+        category: currentCategory,
+      });
       selectedSlot = index;
       commitContext(lastAuditioned);
       dirty = true;
@@ -488,7 +602,11 @@ function handleStep(index, pressed, velocity) {
       const neighbors = progressionNeighbors(state.progression, index);
       currentChord = neighbors.previousChord ? semanticChord(neighbors.previousChord) : null;
       currentNotes = currentChord ? slotNotes(currentChord) : [];
-      displayChord = null;
+      if (displayVoices.voices.size === 0) {
+        displayChord = null;
+        displayNotes = [];
+        displayRootPc = null;
+      }
       currentLabel = `Fill step ${index + 1}`;
       currentCategory = neighbors.nextChord ? 'BETWEEN CHORDS' : 'NEXT CHORD';
       refreshCandidates();
@@ -559,6 +677,9 @@ function editMenu(delta) {
   if (menuValue(menuCursor) === before) return;
   if (menuCursor === 0 || menuCursor === 1 || menuCursor === 3) configureDsp();
   else sendCommand({ op: 'panic' }, true);
+  if (menuCursor === 0 || menuCursor === 1 || menuCursor === 2) {
+    clearVisualVoices('Routing changed', 'CHORD FINDER');
+  }
   scheduleSave();
   announceMenuItem(MENU_ITEMS[menuCursor], menuValue(menuCursor));
   queueLedRefresh();
@@ -573,14 +694,41 @@ function pollDsp() {
   const nextRunning = Boolean(next.running);
   const parsedStep = Number(next.step);
   const nextStep = Number.isFinite(parsedStep) ? parsedStep : -1;
-  if (nextRunning !== running || nextStep !== loopStep) {
+  const parsedCycle = Number(next.cycle);
+  const nextCycle = Number.isFinite(parsedCycle) ? parsedCycle : loopCycle;
+  if (nextRunning !== running || nextStep !== loopStep || nextCycle !== loopCycle) {
     running = nextRunning;
     loopStep = nextStep;
+    loopCycle = nextCycle;
     if (running && loopStep >= 0 && state.progression[loopStep]) {
       const chord = state.progression[loopStep];
-      displayChord = semanticChord(chord);
       currentLabel = nameChord(chord, { key: state.settings.key, scaleId: state.settings.scaleId });
       currentCategory = `STEP ${loopStep + 1}/${progressionLength(state.progression)}`;
+      showDisplayVoice(LOOP_DISPLAY_OWNER, {
+        notes: slotNotes(chord),
+        chord: semanticChord(chord),
+        rootPitchClass: wrap(state.settings.key + chord.tonicOffset, 12),
+        label: currentLabel,
+        category: currentCategory,
+      });
+    } else if (running && loopStep >= 0) {
+      currentLabel = 'Rest';
+      currentCategory = `STEP ${loopStep + 1}/${progressionLength(state.progression)}`;
+      const snapshot = hideDisplayVoice(LOOP_DISPLAY_OWNER);
+      if (!snapshot.active) {
+        displayNotes = [];
+        displayChord = null;
+        displayRootPc = null;
+      }
+    } else if (running && loopStep < 0) {
+      const snapshot = hideDisplayVoice(LOOP_DISPLAY_OWNER);
+      if (!snapshot.active) {
+        currentLabel = progressionLength(state.progression) ? 'Progression waiting' : 'Progression empty';
+        currentCategory = 'CHORD FINDER';
+      }
+    }
+    if (!running) {
+      clearVisualVoices('Progression stopped', 'CHORD FINDER');
     }
     queueLedRefresh();
     dirty = true;
@@ -612,6 +760,9 @@ globalThis.init = function init() {
   focusPc = null;
   currentChord = null;
   currentNotes = [];
+  displayNotes = [];
+  displayRootPc = null;
+  displayVoices = createDisplayVoiceState();
   recentChords = [];
   lastAuditioned = null;
   displayChord = null;
@@ -627,6 +778,7 @@ globalThis.init = function init() {
   }
   running = false;
   loopStep = -1;
+  loopCycle = -1;
   selectedSlot = -1;
   deleteHeld = false;
   shiftHeld = false;
@@ -726,6 +878,9 @@ globalThis.onMidiMessageInternal = function onMidiMessageInternal(data) {
     }
     running = !running;
     sendCommand({ op: 'transport', running: running ? 1 : 0 }, true);
+    if (!running) {
+      clearVisualVoices('Progression stopped', 'CHORD FINDER');
+    }
     queueLedRefresh();
     announce(running ? 'Progression playing' : 'Progression stopped');
     return;

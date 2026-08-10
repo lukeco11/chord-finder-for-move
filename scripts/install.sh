@@ -2,6 +2,7 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+VERSION=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "$ROOT/src/module.json")
 MOVE_HOST=${MOVE_HOST:-move.local}
 MOVE_USER=${MOVE_USER:-ableton}
 REMOTE="/data/UserData/schwung/modules/tools/chord-finder"
@@ -44,4 +45,4 @@ else
 fi
 REMOTE_SCRIPT
 
-echo "Installed Chord Finder. Exit and reopen it from Schwung Tools to load version 0.2.0."
+echo "Installed Chord Finder. Exit and reopen it from Schwung Tools to load version $VERSION."

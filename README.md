@@ -6,6 +6,10 @@ The left half of Move's pad grid plays notes and chooses a root; the right half
 offers 16 deterministic chord candidates. Eight semantic progression slots can
 be auditioned or looped while the UI is suspended.
 
+The main display includes a one-octave piano that follows notes, chord
+auditions, stored-step previews, and loop playback. Sounding white keys fill and
+sounding black keys invert. Small bottom markers identify bass, root, and top.
+
 This is unofficial software for users already comfortable installing Schwung
 and recovering their Move. It does not modify Move or XMOS firmware.
 

@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "host/plugin_api_v1.h"
@@ -52,6 +53,15 @@ static void render(plugin_api_v2_t *api, void *instance, int blocks) {
     for (int i = 0; i < blocks; i++) {
         api->render_block(instance, audio, MOVE_FRAMES_PER_BLOCK);
     }
+}
+
+static unsigned state_uint(const char *state, const char *key) {
+    char needle[48];
+    const char *found;
+    snprintf(needle, sizeof(needle), "\"%s\":", key);
+    found = strstr(state, needle);
+    assert(found != NULL);
+    return (unsigned)strtoul(found + strlen(needle), NULL, 10);
 }
 
 static void test_both_routes_and_voice_release(plugin_api_v2_t *api, void *instance) {
@@ -128,6 +138,34 @@ static void test_loop_slots_and_state(plugin_api_v2_t *api, void *instance) {
     assert(move_log.count > 3);
     api->set_param(instance, "command", "{\"v\":1,\"op\":\"transport\",\"running\":0}");
     render(api, instance, 1);
+}
+
+static void test_loop_state_cycle_advances_when_step_is_unchanged(plugin_api_v2_t *api, void *instance) {
+    char before[256];
+    char after[256];
+    unsigned first_cycle;
+    reset_logs();
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"panic\"}");
+    for (int slot = 0; slot < 8; slot++) {
+        char command[64];
+        snprintf(command, sizeof(command), "{\"v\":1,\"op\":\"slot_clear\",\"slot\":%d}", slot);
+        api->set_param(instance, "command", command);
+    }
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"config\",\"route\":0,\"channel\":0,\"strum_ms\":0,\"gate\":50,\"rate\":0}");
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"slot_set\",\"slot\":0,\"notes\":[60]}");
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"transport\",\"running\":1}");
+    render(api, instance, 1);
+    assert(api->get_param(instance, "state", before, sizeof(before)) > 0);
+    assert(strstr(before, "\"step\":0") != NULL);
+    first_cycle = state_uint(before, "cycle");
+
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"slot_set\",\"slot\":0,\"notes\":[62]}");
+    render(api, instance, 50);
+    assert(api->get_param(instance, "state", after, sizeof(after)) > 0);
+    assert(strstr(after, "\"step\":0") != NULL);
+    assert(state_uint(after, "cycle") > first_cycle);
+    assert(move_log.packets[move_log.count - 1][2] == 62);
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"transport\",\"running\":0}");
 }
 
 static void test_shared_notes_use_destination_refcounts(plugin_api_v2_t *api, void *instance) {
@@ -358,6 +396,7 @@ int main(void) {
     test_route_change_panics_old_destination(api, instance);
     test_strum_is_scheduled_across_blocks(api, instance);
     test_loop_slots_and_state(api, instance);
+    test_loop_state_cycle_advances_when_step_is_unchanged(api, instance);
     test_shared_notes_use_destination_refcounts(api, instance);
     test_replacement_cancels_pending_strum(api, instance);
     test_failed_note_on_does_not_create_phantom_reference(api, instance);
