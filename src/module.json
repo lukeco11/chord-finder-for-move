@@ -2,7 +2,7 @@
   "id": "chord-finder",
   "name": "Chord Finder",
   "abbrev": "CHRD",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Scale-aware chord exploration and eight-slot MIDI progressions.",
   "author": "lukeco11",
   "license": "MIT",

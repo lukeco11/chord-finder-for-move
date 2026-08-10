@@ -51,6 +51,21 @@
       ]
     },
     {
+      "title": "Root Revoice",
+      "lines": [
+        "Hold a right chord",
+        "and press any left",
+        "pad to immediately",
+        "revoice it from the",
+        "new root.",
+        "",
+        "With Capture on,",
+        "the first chord and",
+        "each revoice fill the",
+        "next slot in order."
+      ]
+    },
+    {
       "title": "Progression",
       "lines": [
         "Shift + Step stores",

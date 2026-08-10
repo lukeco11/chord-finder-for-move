@@ -10,6 +10,11 @@ The main display includes a one-octave piano that follows notes, chord
 auditions, stored-step previews, and loop playback. Sounding white keys fill and
 sounding black keys invert. Small bottom markers identify bass, root, and top.
 
+Hold a right chord pad and press a left note to revoice that chord immediately
+from the new root. This works whichever pad Move reports first. With Capture
+enabled, the initial chord and every audible revoice append to successive
+progression slots.
+
 This is unofficial software for users already comfortable installing Schwung
 and recovering their Move. It does not modify Move or XMOS firmware.
 
