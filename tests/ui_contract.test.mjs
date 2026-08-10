@@ -37,3 +37,21 @@ test('key and octave edits do not transpose active display voices', () => {
 test('black-key bass, root, and top markers use separated spans', () => {
   assert.match(source, /if \(key\.black\)[\s\S]{0,220}x = key\.x \+ 1;[\s\S]{0,120}x = key\.x \+ 4;[\s\S]{0,120}x = key\.x \+ 7;/);
 });
+
+test('played roots refresh candidates before revoicing held right pads', () => {
+  assert.match(source, /function handleLeftPad\(index, pressed, velocity\)[\s\S]{0,900}refreshCandidates\(\);\s*revoiceHeldRightPads\(\);/);
+  const updateBody = source.match(/function updateCandidatesAndSlots\(transposeSlots\) \{([\s\S]*?)\n\}/)?.[1] || '';
+  assert.doesNotMatch(updateBody, /revoiceHeldRightPads/);
+});
+
+test('held chord replacements reuse owners, update display, and append Capture steps', () => {
+  assert.match(source, /function revoiceHeldRightPads\(\)[\s\S]{0,180}revoiceHeldCandidates\(state, state\.candidates\)/);
+  assert.match(source, /playVoice\(16 \+ index, next\.notes, heldRightVelocity\[index\]\)/);
+  assert.match(source, /showDisplayVoice\(16 \+ index,[\s\S]{0,420}if \(captureArmed\) appendChord\(next\);/);
+});
+
+test('right-pad velocity and held intent clear on release and lifecycle cleanup', () => {
+  assert.match(source, /function clearHeldPadIntent\(\)[\s\S]{0,180}clearHeldCandidates\(state\)[\s\S]{0,120}heldRightVelocity\.fill\(100\)/);
+  assert.match(source, /handleRightPad\(index, pressed, velocity\)[\s\S]{0,260}heldRightVelocity\[index\][\s\S]{0,900}releaseCandidate\(state, index\)[\s\S]{0,120}heldRightVelocity\[index\] = 100/);
+  assert.match(source, /if \(!parkedLastTick\)[\s\S]{0,240}clearHeldPadIntent\(\)/);
+});

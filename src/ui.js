@@ -19,9 +19,10 @@ import {
   keyboardKeyForPitchClass, keyboardState, startDisplayVoice, stopDisplayVoice,
 } from './keyboard.mjs';
 import {
-  appendProgressionChord, assignProgressionSlot, createUiState,
+  appendProgressionChord, assignProgressionSlot, clearHeldCandidates, createUiState,
   leftPadIndex, migrateSettings, nextExplorationMode, pressCandidate,
-  progressionLength, progressionNeighbors, releaseCandidate, rightPadIndex, ROUTES, takeLedBatch,
+  progressionLength, progressionNeighbors, releaseCandidate, revoiceHeldCandidates,
+  rightPadIndex, ROUTES, takeLedBatch,
 } from './ui_state.mjs';
 
 const SETTINGS_PATH = '/data/UserData/schwung/modules/tools/chord-finder/settings.json';
@@ -67,6 +68,7 @@ let saveCountdown = -1;
 let pollCountdown = 1;
 let dirty = true;
 let heldLeft = Array(16).fill(false);
+let heldRightVelocity = Array(16).fill(100);
 let commandSequence = 0;
 let commandQueue = [];
 let liveOwners = new Set();
@@ -251,7 +253,7 @@ function queueLedRefresh() {
     }
     const palette = chord && chord.sourceClass === 'diatonic' ? DIATONIC_COLORS : COLOR_COLORS;
     const rankBand = index < 5 ? 0 : (index < 11 ? 1 : 2);
-    queueLed(note, state.heldCandidates[index] ? White : palette[rankBand]);
+    queueLed(note, state.heldRight[index] ? White : palette[rankBand]);
   }
   for (let index = 0; index < 8; index += 1) {
     const color = running && loopStep === index
@@ -417,11 +419,16 @@ function hideDisplayVoice(owner) {
   return applyDisplaySnapshot(stopDisplayVoice(displayVoices, owner));
 }
 
+function clearHeldPadIntent() {
+  clearHeldCandidates(state);
+  heldRightVelocity.fill(100);
+}
+
 function clearVisualVoices(label, category) {
   applyDisplaySnapshot(clearDisplayVoices(displayVoices));
   liveOwners.clear();
   heldLeft.fill(false);
-  state.heldCandidates.fill(null);
+  clearHeldPadIntent();
   if (label) currentLabel = label;
   if (category) currentCategory = category;
 }
@@ -454,6 +461,7 @@ function handleLeftPad(index, pressed, velocity) {
       label: currentLabel, category: currentCategory,
     });
     refreshCandidates();
+    revoiceHeldRightPads();
     scheduleSave();
   } else {
     heldLeft[index] = false;
@@ -526,10 +534,37 @@ function appendChord(chord) {
   return index;
 }
 
+function revoiceHeldRightPads() {
+  const replacements = revoiceHeldCandidates(state, state.candidates);
+  let announced = false;
+  for (const { index, next } of replacements) {
+    if (!next) {
+      stopVoice(16 + index);
+      continue;
+    }
+    lastAuditioned = next;
+    currentLabel = next.label;
+    currentCategory = next.sourceClass;
+    playVoice(16 + index, next.notes, heldRightVelocity[index]);
+    showDisplayVoice(16 + index, {
+      notes: next.notes,
+      chord: semanticChord(next),
+      rootPitchClass: wrap(state.settings.key + next.tonicOffset, 12),
+      label: currentLabel,
+      category: currentCategory,
+    });
+    if (captureArmed) appendChord(next);
+    announced = true;
+  }
+  if (announced) announceCurrent();
+  queueLedRefresh();
+}
+
 function handleRightPad(index, pressed, velocity) {
   if (pressed) {
     const chord = state.candidates[index];
     if (!chord) return;
+    heldRightVelocity[index] = clamp(velocity || 100, 1, 127);
     const snapshot = pressCandidate(state, index, chord);
     lastAuditioned = snapshot;
     currentLabel = snapshot.label;
@@ -547,6 +582,7 @@ function handleRightPad(index, pressed, velocity) {
     announceCurrent();
   } else {
     releaseCandidate(state, index);
+    heldRightVelocity[index] = 100;
     stopVoice(16 + index);
     queueLedRefresh();
   }
@@ -788,6 +824,7 @@ globalThis.init = function init() {
   menuEditing = false;
   saveCountdown = -1;
   heldLeft = Array(16).fill(false);
+  heldRightVelocity = Array(16).fill(100);
   commandSequence = 0;
   commandQueue = [];
   liveOwners = new Set();
@@ -808,6 +845,8 @@ globalThis.tick = function tick() {
   if (globalThis.overtakeParked) {
     if (!parkedLastTick) {
       for (const owner of [...liveOwners]) stopVoice(owner);
+      clearHeldPadIntent();
+      heldLeft.fill(false);
       parkedLastTick = true;
     }
     if (saveCountdown >= 0 && --saveCountdown === 0) saveSettings();
@@ -940,6 +979,7 @@ globalThis.onResume = function onResume() {
 
 globalThis.onUnload = function onUnload() {
   for (const owner of [...liveOwners]) stopVoice(owner);
+  clearHeldPadIntent();
   sendCommand({ op: 'panic' }, true);
   flushCommandQueue();
   saveSettings();
