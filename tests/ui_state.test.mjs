@@ -16,7 +16,7 @@ import {
   releaseCandidate,
   rightPadIndex,
   takeLedBatch,
-} from '../src/ui_state.mjs';
+} from '../src/ui_state_v4.mjs';
 
 const chord = Object.freeze({
   tonicOffset: 0,

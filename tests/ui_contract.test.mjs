@@ -4,6 +4,10 @@ import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('../src/ui.js', import.meta.url), 'utf8');
 
+test('imports upgraded UI state through a cache-safe module generation', () => {
+  assert.match(source, /from '\.\/ui_state_v4\.mjs';/);
+});
+
 test('key and octave changes rebuild current absolute notes before candidate ranking', () => {
   assert.match(source, /if \(transposeSlots && currentChord\) currentNotes = slotNotes\(currentChord\);[\s\S]{0,160}refreshCandidates\(\);/);
 });
