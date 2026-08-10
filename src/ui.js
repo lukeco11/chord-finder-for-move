@@ -57,6 +57,7 @@ let currentCategory = 'SCALE ROOT';
 let running = false;
 let loopStep = -1;
 let loopCycle = -1;
+let dspStateSeen = false;
 let selectedSlot = -1;
 let deleteHeld = false;
 let shiftHeld = false;
@@ -732,6 +733,13 @@ function pollDsp() {
   const nextStep = Number.isFinite(parsedStep) ? parsedStep : -1;
   const parsedCycle = Number(next.cycle);
   const nextCycle = Number.isFinite(parsedCycle) ? parsedCycle : loopCycle;
+  if (!dspStateSeen) {
+    running = nextRunning;
+    loopStep = nextStep;
+    loopCycle = nextCycle;
+    dspStateSeen = true;
+    return;
+  }
   if (nextRunning !== running || nextStep !== loopStep || nextCycle !== loopCycle) {
     running = nextRunning;
     loopStep = nextStep;
@@ -815,6 +823,7 @@ globalThis.init = function init() {
   running = false;
   loopStep = -1;
   loopCycle = -1;
+  dspStateSeen = false;
   selectedSlot = -1;
   deleteHeld = false;
   shiftHeld = false;

@@ -8,6 +8,12 @@ test('imports upgraded UI state through a cache-safe module generation', () => {
   assert.match(source, /from '\.\/ui_state_v4\.mjs';/);
 });
 
+test('first DSP poll establishes a baseline without replacing the forced startup LED queue', () => {
+  assert.match(source, /let dspStateSeen = false;/);
+  assert.match(source, /function pollDsp\(\)[\s\S]{0,700}if \(!dspStateSeen\) \{[\s\S]{0,260}dspStateSeen = true;[\s\S]{0,260}return;/);
+  assert.match(source, /globalThis\.init = function init\(\)[\s\S]{0,1400}dspStateSeen = false;[\s\S]{0,500}forceLedPaint = true;[\s\S]{0,180}refreshCandidates\(\);/);
+});
+
 test('key and octave changes rebuild current absolute notes before candidate ranking', () => {
   assert.match(source, /if \(transposeSlots && currentChord\) currentNotes = slotNotes\(currentChord\);[\s\S]{0,160}refreshCandidates\(\);/);
 });
