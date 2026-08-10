@@ -43,6 +43,7 @@ grep -q 'install-swap' scripts/install.sh
 grep -q 'RENAME_EXCHANGE' src/install_swap.c
 grep -q 'ARM aarch64' scripts/build-dsp.sh
 grep -q 'ARM aarch64' scripts/package.sh
+grep -Fq -- '--user "$(id -u):$(id -g)"' scripts/build.sh
 grep -q 'keyboard.mjs' scripts/package.sh
 grep -q 'ui_state_v4.mjs' scripts/package.sh
 grep -q 'verify-package.sh' scripts/package.sh

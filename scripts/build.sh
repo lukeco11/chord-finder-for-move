@@ -8,7 +8,8 @@ if command -v "$COMPILER" >/dev/null 2>&1; then
   "$ROOT/scripts/build-dsp.sh"
 elif command -v docker >/dev/null 2>&1; then
   docker build -t chord-finder-build "$ROOT"
-  docker run --rm -v "$ROOT:/build" chord-finder-build ./scripts/build-dsp.sh
+  docker run --rm --user "$(id -u):$(id -g)" -v "$ROOT:/build" \
+    chord-finder-build ./scripts/build-dsp.sh
 else
   echo "Need Docker or an aarch64-linux-gnu-gcc cross-compiler." >&2
   exit 1
