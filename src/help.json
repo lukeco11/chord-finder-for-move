@@ -1,0 +1,134 @@
+{
+  "title": "Chord Finder",
+  "children": [
+    {
+      "title": "Play",
+      "lines": [
+        "Left 4 columns:",
+        "notes and root focus.",
+        "Shift + left pad",
+        "sets a top note.",
+        "",
+        "Right 4 columns:",
+        "ranked chord choices.",
+        "Green is diatonic.",
+        "Yellow is color.",
+        "Brightness is rank.",
+        "Auditioning does not",
+        "remap the grid."
+      ]
+    },
+    {
+      "title": "Explore",
+      "lines": [
+        "Click the main jog",
+        "to cycle modes:",
+        "ROOT, NEXT, VOICE.",
+        "",
+        "ROOT changes chord",
+        "type on one root.",
+        "NEXT suggests what",
+        "could follow.",
+        "VOICE changes only",
+        "the voicing."
+      ]
+    },
+    {
+      "title": "Piano Display",
+      "lines": [
+        "The lower display",
+        "shows one octave.",
+        "Filled white keys",
+        "and inverted black",
+        "keys are sounding.",
+        "",
+        "Bottom markers:",
+        "left is the bass,",
+        "center is the root,",
+        "right is the top.",
+        "It follows auditions",
+        "and loop playback."
+      ]
+    },
+    {
+      "title": "Root Revoice",
+      "lines": [
+        "Hold a right chord",
+        "and press any left",
+        "pad to immediately",
+        "revoice it from the",
+        "new root.",
+        "",
+        "With Capture on,",
+        "the first chord and",
+        "each revoice fill the",
+        "next slot in order."
+      ]
+    },
+    {
+      "title": "Progression",
+      "lines": [
+        "Shift + Step stores",
+        "the last chord.",
+        "",
+        "Delete + Step clears.",
+        "Capture toggles",
+        "automatic append.",
+        "",
+        "Tap a stored step",
+        "to preview it.",
+        "Tap an empty step",
+        "for gap suggestions.",
+        "Play toggles the loop."
+      ]
+    },
+    {
+      "title": "Encoders",
+      "lines": [
+        "1 Key",
+        "2 Scale",
+        "3 Color depth",
+        "4 Extension",
+        "5 Inversion",
+        "6 Spread",
+        "7 Strum",
+        "8 Loop rate",
+        "",
+        "Up/Down changes",
+        "the octave range."
+      ]
+    },
+    {
+      "title": "MIDI Setup",
+      "lines": [
+        "Menu opens channel,",
+        "output, preview, and",
+        "gate settings.",
+        "TEST OUTPUT sends a",
+        "short C major chord.",
+        "",
+        "MOVE/USB-C injects",
+        "into a Move track.",
+        "Set that track's MIDI",
+        "In and Out to the",
+        "same channel.",
+        "USB-A sends directly."
+      ]
+    },
+    {
+      "title": "Exit Safety",
+      "lines": [
+        "Back suspends the UI",
+        "while playback keeps",
+        "running.",
+        "",
+        "Shift + Back exits.",
+        "LOOP STOP means the",
+        "progression is idle.",
+        "Route changes, exit,",
+        "and unload send note",
+        "cleanup."
+      ]
+    }
+  ]
+}

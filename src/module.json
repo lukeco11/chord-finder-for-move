@@ -1,0 +1,23 @@
+{
+  "id": "chord-finder",
+  "name": "Chord Finder",
+  "abbrev": "CHRD",
+  "version": "0.4.2",
+  "description": "Scale-aware chord exploration and eight-slot MIDI progressions.",
+  "author": "lukeco11",
+  "license": "MIT",
+  "ui": "ui.js",
+  "dsp": "dsp.so",
+  "api_version": 2,
+  "component_type": "tool",
+  "tool_config": {
+    "interactive": true,
+    "skip_file_browser": true,
+    "overtake": true
+  },
+  "capabilities": {
+    "midi_out": true,
+    "suspend_keeps_js": true,
+    "button_passthrough": [85, 86]
+  }
+}
