@@ -1,0 +1,12 @@
+{
+  "id": "chord-finder",
+  "name": "Chord Finder",
+  "description": "Scale-aware chord exploration and eight-slot MIDI progressions.",
+  "author": "lukeco11",
+  "component_type": "tool",
+  "github_repo": "lukeco11/chord-finder-for-move",
+  "default_branch": "main",
+  "asset_name": "chord-finder-module.tar.gz",
+  "min_host_version": "0.11.6",
+  "requires": "Ableton Move 1.8 or newer with Schwung; USB-C forwarding requires matching Move track MIDI routing."
+}

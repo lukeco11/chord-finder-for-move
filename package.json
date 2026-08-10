@@ -1,0 +1,12 @@
+{
+  "name": "schwung-chord-finder",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "npm run test:js && npm run test:dsp && npm run test:package",
+    "test:js": "node --test tests/*.test.mjs",
+    "test:dsp": "sh tests/dsp/run.sh",
+    "test:package": "sh tests/package/run.sh"
+  }
+}
