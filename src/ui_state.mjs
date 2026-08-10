@@ -71,6 +71,7 @@ export function createUiState(settings = {}) {
     progression: persisted.progression,
     candidates: Array(16).fill(null),
     heldCandidates: Array(16).fill(null),
+    heldRight: Array(16).fill(false),
     captureIndex: 0,
     ledQueue: [],
   };
@@ -94,21 +95,45 @@ export function rightPadIndex(note) {
   return position && position.column >= 4 ? position.row * 4 + position.column - 4 : -1;
 }
 
-export function pressCandidate(state, index, chord) {
+function snapshotCandidate(chord) {
   const snapshot = {
     ...chord,
     extensions: [...(chord.extensions || [])],
     notes: [...(chord.notes || [])],
   };
   if (chord.intervals) snapshot.intervals = [...chord.intervals];
+  return snapshot;
+}
+
+export function pressCandidate(state, index, chord) {
+  const snapshot = snapshotCandidate(chord);
   state.heldCandidates[index] = snapshot;
+  state.heldRight[index] = true;
   return snapshot;
 }
 
 export function releaseCandidate(state, index) {
   const snapshot = state.heldCandidates[index];
   state.heldCandidates[index] = null;
+  state.heldRight[index] = false;
   return snapshot;
+}
+
+export function revoiceHeldCandidates(state, candidates) {
+  const replacements = [];
+  for (let index = 0; index < state.heldRight.length; index += 1) {
+    if (!state.heldRight[index]) continue;
+    const previous = state.heldCandidates[index];
+    const next = candidates[index] ? snapshotCandidate(candidates[index]) : null;
+    state.heldCandidates[index] = next;
+    replacements.push({ index, previous, next });
+  }
+  return replacements;
+}
+
+export function clearHeldCandidates(state) {
+  state.heldCandidates.fill(null);
+  state.heldRight.fill(false);
 }
 
 export function assignProgressionSlot(state, index, chord) {

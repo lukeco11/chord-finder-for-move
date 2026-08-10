@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   appendProgressionChord,
   assignProgressionSlot,
+  clearHeldCandidates,
   createUiState,
   leftPadIndex,
   migrateSettings,
@@ -11,6 +12,7 @@ import {
   pressCandidate,
   progressionLength,
   progressionNeighbors,
+  revoiceHeldCandidates,
   releaseCandidate,
   rightPadIndex,
   takeLedBatch,
@@ -48,6 +50,49 @@ test('candidate release returns the press-time snapshot after candidates refresh
   assert.deepEqual(released.notes, [60, 64, 67]);
   assert.equal(released.label, 'C');
   assert.notDeepEqual(released, state.candidates[2]);
+});
+
+test('revoices held candidates in physical pad order while preserving intent', () => {
+  const state = createUiState();
+  pressCandidate(state, 5, { ...chord, notes: [60, 64, 67], label: 'C' });
+  pressCandidate(state, 2, { ...chord, notes: [62, 65, 69], label: 'Dm' });
+  const candidates = Array(16).fill(null);
+  candidates[2] = { ...chord, tonicOffset: 7, notes: [67, 71, 74], label: 'G' };
+  candidates[5] = { ...chord, tonicOffset: 9, notes: [69, 72, 76], label: 'Am' };
+
+  const replacements = revoiceHeldCandidates(state, candidates);
+
+  assert.deepEqual(replacements.map(({ index }) => index), [2, 5]);
+  assert.deepEqual(replacements[0].previous.notes, [62, 65, 69]);
+  assert.deepEqual(replacements[0].next.notes, [67, 71, 74]);
+  assert.deepEqual(state.heldCandidates[5].notes, [69, 72, 76]);
+  assert.equal(state.heldRight[2], true);
+  assert.equal(state.heldRight[5], true);
+});
+
+test('missing replacement stops the snapshot but keeps pad intent until release', () => {
+  const state = createUiState();
+  pressCandidate(state, 3, { ...chord, notes: [60, 64, 67], label: 'C' });
+
+  const [replacement] = revoiceHeldCandidates(state, Array(16).fill(null));
+
+  assert.equal(replacement.index, 3);
+  assert.equal(replacement.next, null);
+  assert.equal(state.heldCandidates[3], null);
+  assert.equal(state.heldRight[3], true);
+  assert.equal(releaseCandidate(state, 3), null);
+  assert.equal(state.heldRight[3], false);
+});
+
+test('clears every held snapshot and physical pad intent after panic cleanup', () => {
+  const state = createUiState();
+  pressCandidate(state, 1, { ...chord, notes: [60, 64, 67] });
+  pressCandidate(state, 8, { ...chord, notes: [62, 65, 69] });
+
+  clearHeldCandidates(state);
+
+  assert.deepEqual(state.heldCandidates, Array(16).fill(null));
+  assert.deepEqual(state.heldRight, Array(16).fill(false));
 });
 
 test('assigns and appends without overwriting a full progression', () => {
