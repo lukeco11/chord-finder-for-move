@@ -1,5 +1,6 @@
 export const SETTINGS_SCHEMA_VERSION = 2;
 export const ROUTES = Object.freeze(['move', 'external', 'both']);
+export const PREVIEW_ROUTES = Object.freeze([...ROUTES, 'schwung']);
 export const EXPLORATION_MODES = Object.freeze(['root', 'next', 'voice']);
 
 export const DEFAULT_SETTINGS = Object.freeze({
@@ -22,6 +23,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
 });
 
 const VALID_ROUTES = new Set(ROUTES);
+const VALID_PREVIEW_ROUTES = new Set(PREVIEW_ROUTES);
 const VALID_MODES = new Set(EXPLORATION_MODES);
 const clamp = (value, minimum, maximum, fallback) => {
   const numeric = Number(value);
@@ -59,9 +61,17 @@ export function migrateSettings(input = {}) {
     gate: clamp(input.gate ?? DEFAULT_SETTINGS.gate, 10, 100, DEFAULT_SETTINGS.gate),
     channel: clamp(input.channel ?? DEFAULT_SETTINGS.channel, 0, 15, DEFAULT_SETTINGS.channel),
     route: VALID_ROUTES.has(input.route) ? input.route : DEFAULT_SETTINGS.route,
-    previewRoute: VALID_ROUTES.has(input.previewRoute) ? input.previewRoute : DEFAULT_SETTINGS.previewRoute,
+    previewRoute: VALID_PREVIEW_ROUTES.has(input.previewRoute)
+      ? input.previewRoute
+      : DEFAULT_SETTINGS.previewRoute,
     progression,
   };
+}
+
+export function hostSupportsActiveMoveInject(globals = globalThis) {
+  const hasOvertakeInput = typeof globals.shadow_inbound_pad_midi_active === 'function';
+  const hasDedicatedOutput = typeof globals.shadow_overtake_move_inject_active === 'function';
+  return !hasOvertakeInput || hasDedicatedOutput;
 }
 
 export function createUiState(settings = {}) {

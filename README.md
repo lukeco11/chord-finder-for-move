@@ -28,7 +28,8 @@ It is a fast way to audition and capture chord ideas.
 ## Requirements
 
 - Ableton Move 1.8 or newer
-- Schwung 0.11.6 or newer
+- Schwung 0.11.6, or a host newer than 0.12.1 that includes the active
+  overtake Move-injection fix
 - Move and your computer connected to the same network for installation
 - A Move track with an instrument, or a MIDI device connected to Move's USB-A
   port, so the generated MIDI has something to play
@@ -36,6 +37,12 @@ It is a fast way to audition and capture chord ideas.
 Schwung is unofficial software that modifies Move's software. Back up
 important sets and samples and read Schwung's recovery guidance before
 installing it.
+
+Schwung 0.12.0 and 0.12.1 cannot send native Move-track MIDI while an
+overtake screen is open. Chord Finder detects those hosts and disables its
+`MOVE/USB-C` leg instead of queuing notes that would play later. `USB-A` and
+`SCHWUNG` preview remain available. Upgrade Schwung when a release containing
+`shadow_overtake_move_inject_active()` is available.
 
 ## Install with Schwung Manager
 
@@ -82,6 +89,12 @@ For an external instrument, connect it to Move's USB-A port, set **Preview
 Route** to `USB-A`, and match the MIDI channels. Choose `BOTH` to send the same
 notes to both destinations. The **Test Output** item in Menu plays a short test
 chord and is useful when checking routing.
+
+To audition through a synth loaded in Schwung's signal chain, set **Preview
+Route** to `SCHWUNG` and match the Chord Finder MIDI channel to the chain
+slot's receive channel. This is a live-preview choice only: saved progression
+playback still uses the separate **Output Route** setting (`MOVE/USB-C`,
+`USB-A`, or `BOTH`).
 
 ## Find chords
 
@@ -147,7 +160,8 @@ key or octave transposes the saved progression.
 
 The most direct, predictable route is USB-A: connect a class-compliant USB MIDI
 interface or device to Move's USB-A port, select `USB-A` or `BOTH`, and record
-that MIDI in your DAW.
+that MIDI in your DAW. Chord Finder sends musical USB MIDI on Schwung's cable
+2 path so channel voice messages reach the external device correctly.
 
 `MOVE/USB-C` injects notes into the configured native Move track. On Move
 firmware that forwards that track through the USB-C Standalone Port, set the

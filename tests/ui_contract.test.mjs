@@ -5,13 +5,16 @@ import { readFileSync } from 'node:fs';
 const source = readFileSync(new URL('../src/ui.js', import.meta.url), 'utf8');
 
 test('imports upgraded UI state through a cache-safe module generation', () => {
-  assert.match(source, /from '\.\/ui_state_v4\.mjs';/);
+  assert.match(source, /from '\.\/ui_state_v5\.mjs';/);
 });
 
 test('first DSP poll establishes a baseline without replacing the forced startup LED queue', () => {
+  const initBody = source.match(/globalThis\.init = function init\(\) \{([\s\S]*?)\n\};/)?.[1] ?? '';
+
   assert.match(source, /let dspStateSeen = false;/);
   assert.match(source, /function pollDsp\(\)[\s\S]{0,700}if \(!dspStateSeen\) \{[\s\S]{0,260}dspStateSeen = true;[\s\S]{0,260}return;/);
-  assert.match(source, /globalThis\.init = function init\(\)[\s\S]{0,1400}dspStateSeen = false;[\s\S]{0,500}forceLedPaint = true;[\s\S]{0,180}refreshCandidates\(\);/);
+  assert.match(initBody, /dspStateSeen = false;/);
+  assert.match(initBody, /forceLedPaint = true;[\s\S]{0,180}refreshCandidates\(\);/);
 });
 
 test('key and octave changes rebuild current absolute notes before candidate ranking', () => {
@@ -64,4 +67,14 @@ test('right-pad velocity and held intent clear on release and lifecycle cleanup'
   assert.match(source, /function clearHeldPadIntent\(\)[\s\S]{0,180}clearHeldCandidates\(state\)[\s\S]{0,120}heldRightVelocity\.fill\(100\)/);
   assert.match(source, /handleRightPad\(index, pressed, velocity\)[\s\S]{0,260}heldRightVelocity\[index\][\s\S]{0,900}releaseCandidate\(state, index\)[\s\S]{0,120}heldRightVelocity\[index\] = 100/);
   assert.match(source, /if \(!parkedLastTick\)[\s\S]{0,240}clearHeldPadIntent\(\)/);
+});
+
+test('preview routing includes Schwung without expanding progression routes', () => {
+  assert.match(source, /rightPadIndex, PREVIEW_ROUTES, ROUTES, takeLedBatch/);
+  assert.match(source, /menuCursor === 1[\s\S]{0,180}ROUTES[\s\S]{0,220}menuCursor === 2[\s\S]{0,180}PREVIEW_ROUTES/);
+});
+
+test('DSP configuration reports whether active native injection is supported', () => {
+  assert.match(source, /hostSupportsActiveMoveInject\(globalThis\)/);
+  assert.match(source, /function configureDsp\(\)[\s\S]{0,300}move_available: moveAvailable \? 1 : 0/);
 });

@@ -22,13 +22,13 @@ import {
   appendProgressionChord, assignProgressionSlot, clearHeldCandidates, createUiState,
   leftPadIndex, migrateSettings, nextExplorationMode, pressCandidate,
   progressionLength, progressionNeighbors, releaseCandidate, revoiceHeldCandidates,
-  rightPadIndex, ROUTES, takeLedBatch,
-} from './ui_state_v4.mjs';
+  rightPadIndex, PREVIEW_ROUTES, ROUTES, takeLedBatch, hostSupportsActiveMoveInject,
+} from './ui_state_v5.mjs';
 
 const SETTINGS_PATH = '/data/UserData/schwung/modules/tools/chord-finder/settings.json';
-const ROUTE_LABELS = { move: 'MOVE/USB-C', external: 'USB-A', both: 'BOTH' };
-const ROUTE_SHORT = { move: 'M', external: 'A', both: 'B' };
-const ROUTE_VALUES = { move: 0, external: 1, both: 2 };
+const ROUTE_LABELS = { move: 'MOVE/USB-C', external: 'USB-A', both: 'BOTH', schwung: 'SCHWUNG' };
+const ROUTE_SHORT = { move: 'M', external: 'A', both: 'B', schwung: 'S' };
+const ROUTE_VALUES = { move: 0, external: 1, both: 2, schwung: 3 };
 const RATE_LABELS = ['1/16', '1/8', '1/4', '1/2', '1 BAR'];
 const DIATONIC_COLORS = [BrightGreen, ForestGreen, DullGreen];
 const COLOR_COLORS = [VividYellow, Ochre, BurntOrange];
@@ -77,6 +77,7 @@ let parkedLastTick = false;
 let forceLedPaint = false;
 let overlayText = '';
 let overlayCountdown = 0;
+let moveAvailable = true;
 
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
@@ -84,6 +85,14 @@ function clamp(value, minimum, maximum) {
 
 function wrap(value, length) {
   return ((value % length) + length) % length;
+}
+
+function routeUsesMove(route) {
+  return route === 'move' || route === 'both';
+}
+
+function routeUnavailable(route) {
+  return !moveAvailable && routeUsesMove(route);
 }
 
 function clonePersistedSettings() {
@@ -122,6 +131,7 @@ function configureDsp() {
     op: 'config',
     route: ROUTE_VALUES[settings.route],
     channel: settings.channel,
+    move_available: moveAvailable ? 1 : 0,
     strum_ms: settings.strumMs,
     gate: settings.gate,
     rate: settings.rate,
@@ -285,8 +295,8 @@ function truncate(text, maximum) {
 function menuValue(index) {
   const settings = state.settings;
   if (index === 0) return String(settings.channel + 1);
-  if (index === 1) return ROUTE_LABELS[settings.route];
-  if (index === 2) return ROUTE_LABELS[settings.previewRoute];
+  if (index === 1) return routeUnavailable(settings.route) ? `${settings.route.toUpperCase()}!` : ROUTE_LABELS[settings.route];
+  if (index === 2) return routeUnavailable(settings.previewRoute) ? `${settings.previewRoute.toUpperCase()}!` : ROUTE_LABELS[settings.previewRoute];
   if (index === 3) return String(settings.gate) + '%';
   return 'PRESS';
 }
@@ -373,9 +383,12 @@ function drawPianoKeyboard() {
 function drawMain() {
   const scale = getScale(state.settings.scaleId);
   const keyName = KEY_NAMES[state.settings.key];
+  const routeStatus = routeUnavailable(state.settings.previewRoute)
+    ? '!M'
+    : ROUTE_SHORT[state.settings.previewRoute];
   clear_screen();
   print(0, 0, truncate(keyName + ' ' + scale.name, 15), 1);
-  print(94, 0, truncate(ROUTE_SHORT[state.settings.previewRoute] + ' C' + (state.settings.channel + 1), 5), 1);
+  print(90, 0, truncate(routeStatus + ' C' + (state.settings.channel + 1), 6), 1);
   print(0, 10, truncate(overlayText || currentLabel, 21), 1);
   const top = topNotePc === null ? '' : `  TOP ${KEY_NAMES[topNotePc]}`;
   print(0, 20, truncate(modeContext() + top, 21), 1);
@@ -709,7 +722,7 @@ function editMenu(delta) {
   const before = menuValue(menuCursor);
   if (menuCursor === 0) settings.channel = clamp(settings.channel + delta, 0, 15);
   if (menuCursor === 1) settings.route = ROUTES[wrap(ROUTES.indexOf(settings.route) + delta, ROUTES.length)];
-  if (menuCursor === 2) settings.previewRoute = ROUTES[wrap(ROUTES.indexOf(settings.previewRoute) + delta, ROUTES.length)];
+  if (menuCursor === 2) settings.previewRoute = PREVIEW_ROUTES[wrap(PREVIEW_ROUTES.indexOf(settings.previewRoute) + delta, PREVIEW_ROUTES.length)];
   if (menuCursor === 3) settings.gate = clamp(settings.gate + delta * 5, 10, 100);
   if (menuValue(menuCursor) === before) return;
   if (menuCursor === 0 || menuCursor === 1 || menuCursor === 3) configureDsp();
@@ -718,7 +731,13 @@ function editMenu(delta) {
     clearVisualVoices('Routing changed', 'CHORD FINDER');
   }
   scheduleSave();
-  announceMenuItem(MENU_ITEMS[menuCursor], menuValue(menuCursor));
+  if ((menuCursor === 1 || menuCursor === 2)
+      && routeUnavailable(menuCursor === 1 ? settings.route : settings.previewRoute)) {
+    showOverlay('UPDATE SCHWUNG HOST');
+    announce('Move route unavailable until Schwung is updated');
+  } else {
+    announceMenuItem(MENU_ITEMS[menuCursor], menuValue(menuCursor));
+  }
   queueLedRefresh();
   dirty = true;
 }
@@ -801,6 +820,7 @@ function primeCaptureIndex() {
 
 globalThis.init = function init() {
   state = createUiState(loadSettings());
+  moveAvailable = hostSupportsActiveMoveInject(globalThis);
   focusPc = null;
   currentChord = null;
   currentNotes = [];
@@ -840,6 +860,10 @@ globalThis.init = function init() {
   parkedLastTick = false;
   overlayText = '';
   overlayCountdown = 0;
+  if (!moveAvailable && (routeUsesMove(state.settings.route) || routeUsesMove(state.settings.previewRoute))) {
+    overlayText = 'UPDATE SCHWUNG HOST';
+    overlayCountdown = 150;
+  }
   pollCountdown = 1;
   forceLedPaint = true;
   configureDsp();
@@ -947,7 +971,11 @@ globalThis.onMidiMessageInternal = function onMidiMessageInternal(data) {
     }
     if (menuCursor === 4) {
       sendCommand({ op: 'output_test', route: liveRoute(), channel: state.settings.channel }, true);
-      announce(`Testing ${ROUTE_LABELS[state.settings.previewRoute]} channel ${state.settings.channel + 1}`);
+      if (routeUnavailable(state.settings.previewRoute)) {
+        announce('Move preview unavailable until Schwung is updated');
+      } else {
+        announce(`Testing ${ROUTE_LABELS[state.settings.previewRoute]} channel ${state.settings.channel + 1}`);
+      }
       return;
     }
     menuEditing = !menuEditing;

@@ -12,9 +12,15 @@
 #define DEFAULT_BPM 120.0f
 #define LOOP_OWNER 63
 #define TEST_OWNER 62
-#define MOVE_TRACK_CABLE 2
+#define USB_A_CABLE 2
 
-enum { ROUTE_MOVE = 0, ROUTE_EXTERNAL = 1, ROUTE_BOTH = 2 };
+enum {
+    DESTINATION_MOVE = 0,
+    DESTINATION_EXTERNAL = 1,
+    DESTINATION_SCHWUNG = 2,
+    DESTINATION_COUNT = 3
+};
+enum { ROUTE_MOVE = 0, ROUTE_EXTERNAL = 1, ROUTE_BOTH = 2, ROUTE_SCHWUNG = 3 };
 enum { EVENT_NOTE_ON = 1, EVENT_OWNER_OFF = 2 };
 
 typedef struct {
@@ -48,6 +54,7 @@ typedef struct {
     uint8_t channel;
     uint8_t gate;
     uint8_t rate;
+    uint8_t move_available;
     uint16_t strum_ms;
     uint8_t running;
     uint8_t loop_cursor;
@@ -61,14 +68,15 @@ typedef struct {
     voice_t voices[MAX_OWNERS];
     slot_t slots[SLOT_COUNT];
     event_t events[MAX_EVENTS];
-    uint16_t refs[2][16][128];
-    uint8_t pending_off[2][16][128];
+    uint16_t refs[DESTINATION_COUNT][16][128];
+    uint8_t pending_off[DESTINATION_COUNT][16][128];
 } chord_finder_t;
 
 static const host_api_v1_t *g_host;
 
 static int route_has_move(int route) { return route == ROUTE_MOVE || route == ROUTE_BOTH; }
 static int route_has_external(int route) { return route == ROUTE_EXTERNAL || route == ROUTE_BOTH; }
+static int route_has_schwung(int route) { return route == ROUTE_SCHWUNG; }
 
 static const char *json_value(const char *json, const char *key) {
     char needle[48];
@@ -120,15 +128,18 @@ static int json_notes(const char *json, uint8_t notes[MAX_NOTES]) {
 
 static int send_packet(chord_finder_t *s, int destination, uint8_t cin,
                        uint8_t status, uint8_t note, uint8_t velocity) {
-    uint8_t cable = destination == 0 ? MOVE_TRACK_CABLE : 0;
+    uint8_t cable = destination == DESTINATION_SCHWUNG ? 0 : USB_A_CABLE;
     uint8_t packet[4] = {
         (uint8_t)((cable << 4) | (cin & 0x0f)), status, note, velocity
     };
     int sent = 0;
-    if (destination == 0 && s->host && s->host->midi_inject_to_move)
+    if (destination == DESTINATION_MOVE && !s->move_available) return 1;
+    if (destination == DESTINATION_MOVE && s->host && s->host->midi_inject_to_move)
         sent = s->host->midi_inject_to_move(packet, 4);
-    if (destination == 1 && s->host && s->host->midi_send_external)
+    if (destination == DESTINATION_EXTERNAL && s->host && s->host->midi_send_external)
         sent = s->host->midi_send_external(packet, 4);
+    if (destination == DESTINATION_SCHWUNG && s->host && s->host->midi_send_internal)
+        sent = s->host->midi_send_internal(packet, 4);
     if (sent != 4) s->dropped++;
     return sent == 4;
 }
@@ -172,7 +183,7 @@ static void destination_note_off(chord_finder_t *s, int destination, int channel
 
 static void retry_pending_offs(chord_finder_t *s, int maximum_per_destination) {
     int destination, channel, note;
-    for (destination = 0; destination < 2; destination++) {
+    for (destination = 0; destination < DESTINATION_COUNT; destination++) {
         int sent = 0;
         for (channel = 0; channel < 16 && sent < maximum_per_destination; channel++) {
             for (note = 0; note < 128 && sent < maximum_per_destination; note++) {
@@ -192,14 +203,20 @@ next_destination:
 
 static void emit_note_on(chord_finder_t *s, const voice_t *voice, int note) {
     if (route_has_move(voice->route))
-        destination_note_on(s, 0, voice->channel, note, voice->velocity);
+        destination_note_on(s, DESTINATION_MOVE, voice->channel, note, voice->velocity);
     if (route_has_external(voice->route))
-        destination_note_on(s, 1, voice->channel, note, voice->velocity);
+        destination_note_on(s, DESTINATION_EXTERNAL, voice->channel, note, voice->velocity);
+    if (route_has_schwung(voice->route))
+        destination_note_on(s, DESTINATION_SCHWUNG, voice->channel, note, voice->velocity);
 }
 
 static void emit_note_off(chord_finder_t *s, const voice_t *voice, int note) {
-    if (route_has_move(voice->route)) destination_note_off(s, 0, voice->channel, note);
-    if (route_has_external(voice->route)) destination_note_off(s, 1, voice->channel, note);
+    if (route_has_move(voice->route))
+        destination_note_off(s, DESTINATION_MOVE, voice->channel, note);
+    if (route_has_external(voice->route))
+        destination_note_off(s, DESTINATION_EXTERNAL, voice->channel, note);
+    if (route_has_schwung(voice->route))
+        destination_note_off(s, DESTINATION_SCHWUNG, voice->channel, note);
 }
 
 static void cancel_owner_events(chord_finder_t *s, int owner) {
@@ -267,7 +284,7 @@ static void panic(chord_finder_t *s) {
     int owner, event, destination, channel, note;
     for (owner = 0; owner < MAX_OWNERS; owner++) release_voice(s, owner);
     for (event = 0; event < MAX_EVENTS; event++) s->events[event].active = 0;
-    for (destination = 0; destination < 2; destination++) {
+    for (destination = 0; destination < DESTINATION_COUNT; destination++) {
         for (channel = 0; channel < 16; channel++) {
             for (note = 0; note < 128; note++) {
                 if (s->refs[destination][channel][note] > 0) {
@@ -355,6 +372,7 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
     s->route = ROUTE_MOVE;
     s->gate = 85;
     s->rate = 2;
+    s->move_available = 1;
     s->displayed_step = -1;
     return s;
 }
@@ -384,12 +402,15 @@ static void set_command(chord_finder_t *s, const char *json) {
     if (strcmp(op, "config") == 0) {
         int route = json_int(json, "route", s->route);
         int channel = json_int(json, "channel", s->channel);
+        int move_available = json_int(json, "move_available", s->move_available) ? 1 : 0;
         if (route < ROUTE_MOVE || route > ROUTE_BOTH) route = ROUTE_MOVE;
         if (channel < 0) channel = 0;
         if (channel > 15) channel = 15;
-        if (route != s->route || channel != s->channel) panic(s);
+        if (route != s->route || channel != s->channel || move_available != s->move_available)
+            panic(s);
         s->route = (uint8_t)route;
         s->channel = (uint8_t)channel;
+        s->move_available = (uint8_t)move_available;
         s->strum_ms = (uint16_t)json_int(json, "strum_ms", s->strum_ms);
         if (s->strum_ms > 100) s->strum_ms = 100;
         s->gate = (uint8_t)json_int(json, "gate", s->gate);
@@ -406,7 +427,7 @@ static void set_command(chord_finder_t *s, const char *json) {
         int channel = json_int(json, "channel", s->channel);
         if (velocity < 1) velocity = 1;
         if (velocity > 127) velocity = 127;
-        if (route < ROUTE_MOVE || route > ROUTE_BOTH) route = s->route;
+        if (route < ROUTE_MOVE || route > ROUTE_SCHWUNG) route = s->route;
         if (channel < 0 || channel > 15) channel = s->channel;
         start_voice(s, owner, notes, count, velocity, route, channel, 0);
     } else if (strcmp(op, "voice_off") == 0) {
@@ -446,7 +467,7 @@ static void set_command(chord_finder_t *s, const char *json) {
         static const uint8_t notes[3] = { 60, 64, 67 };
         int route = json_int(json, "route", s->route);
         int channel = json_int(json, "channel", s->channel);
-        if (route < ROUTE_MOVE || route > ROUTE_BOTH) route = s->route;
+        if (route < ROUTE_MOVE || route > ROUTE_SCHWUNG) route = s->route;
         if (channel < 0 || channel > 15) channel = s->channel;
         start_voice(s, TEST_OWNER, notes, 3, 100, route, channel,
                     (int)(s->sample_rate / 2U));
@@ -470,7 +491,7 @@ static int active_owner_count(const chord_finder_t *s) {
 
 static int pending_off_count(const chord_finder_t *s) {
     int destination, channel, note, count = 0;
-    for (destination = 0; destination < 2; destination++)
+    for (destination = 0; destination < DESTINATION_COUNT; destination++)
         for (channel = 0; channel < 16; channel++)
             for (note = 0; note < 128; note++)
                 if (s->pending_off[destination][channel][note]) count++;
@@ -481,9 +502,9 @@ static int get_param(void *instance, const char *key, char *buf, int buf_len) {
     chord_finder_t *s = (chord_finder_t *)instance;
     if (!s || !key || !buf || buf_len <= 0 || strcmp(key, "state") != 0) return -1;
     return snprintf(buf, (size_t)buf_len,
-                    "{\"v\":1,\"running\":%d,\"step\":%d,\"cycle\":%u,\"length\":%d,\"route\":%d,\"channel\":%d,\"activeOwners\":%d,\"pendingOffs\":%d,\"dropped\":%u,\"ack\":%u}",
+                    "{\"v\":1,\"running\":%d,\"step\":%d,\"cycle\":%u,\"length\":%d,\"route\":%d,\"channel\":%d,\"moveAvailable\":%d,\"activeOwners\":%d,\"pendingOffs\":%d,\"dropped\":%u,\"ack\":%u}",
                     s->running, s->displayed_step, s->loop_cycle, s->loop_length, s->route,
-                    s->channel, active_owner_count(s), pending_off_count(s),
+                    s->channel, s->move_available, active_owner_count(s), pending_off_count(s),
                     s->dropped, s->last_seq);
 }
 
