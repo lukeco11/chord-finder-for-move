@@ -15,6 +15,7 @@ typedef struct {
 
 static packet_log_t move_log;
 static packet_log_t external_log;
+static packet_log_t schwung_log;
 static int fail_move_sends;
 static int fail_external_sends;
 
@@ -38,12 +39,19 @@ static int log_external(const uint8_t *msg, int len) {
     return len;
 }
 
+static int log_schwung(const uint8_t *msg, int len) {
+    assert(len == 4);
+    memcpy(schwung_log.packets[schwung_log.count++], msg, 4);
+    return len;
+}
+
 static float host_bpm(void) { return 120.0f; }
 static int host_clock(void) { return MOVE_CLOCK_STATUS_RUNNING; }
 
 static void reset_logs(void) {
     memset(&move_log, 0, sizeof(move_log));
     memset(&external_log, 0, sizeof(external_log));
+    memset(&schwung_log, 0, sizeof(schwung_log));
     fail_move_sends = 0;
     fail_external_sends = 0;
 }
@@ -89,11 +97,43 @@ static void test_routes_use_destination_usb_midi_cables(plugin_api_v2_t *api, vo
     assert(move_log.count == 1);
     assert(external_log.count == 1);
     assert(move_log.packets[0][0] == 0x29);
-    assert(external_log.packets[0][0] == 0x09);
+    assert(external_log.packets[0][0] == 0x29);
 
     api->set_param(instance, "command", "{\"v\":1,\"op\":\"voice_off\",\"owner\":3}");
     assert(move_log.packets[1][0] == 0x28);
-    assert(external_log.packets[1][0] == 0x08);
+    assert(external_log.packets[1][0] == 0x28);
+}
+
+static void test_schwung_preview_uses_internal_chain(plugin_api_v2_t *api, void *instance) {
+    reset_logs();
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"voice_on\",\"owner\":16,\"route\":3,\"channel\":4,\"notes\":[60,64,67]}");
+    render(api, instance, 1);
+
+    assert(schwung_log.count == 3);
+    assert(move_log.count == 0);
+    assert(external_log.count == 0);
+    assert(schwung_log.packets[0][0] == 0x09);
+    assert(schwung_log.packets[0][1] == 0x94);
+
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"voice_off\",\"owner\":16}");
+    assert(schwung_log.count == 6);
+    assert(schwung_log.packets[5][0] == 0x08);
+}
+
+static void test_known_broken_host_suppresses_native_output(plugin_api_v2_t *api, void *instance) {
+    char before[256];
+    char after[256];
+    reset_logs();
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"config\",\"route\":0,\"channel\":0,\"move_available\":0,\"strum_ms\":0}");
+    assert(api->get_param(instance, "state", before, sizeof(before)) > 0);
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"voice_on\",\"owner\":17,\"route\":0,\"notes\":[72]}");
+    render(api, instance, 1);
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"voice_off\",\"owner\":17}");
+    assert(api->get_param(instance, "state", after, sizeof(after)) > 0);
+
+    assert(move_log.count == 0);
+    assert(state_uint(after, "dropped") == state_uint(before, "dropped"));
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"config\",\"route\":0,\"channel\":0,\"move_available\":1,\"strum_ms\":0}");
 }
 
 static void test_route_change_panics_old_destination(plugin_api_v2_t *api, void *instance) {
@@ -381,6 +421,7 @@ int main(void) {
         .api_version = 1,
         .sample_rate = MOVE_SAMPLE_RATE,
         .frames_per_block = MOVE_FRAMES_PER_BLOCK,
+        .midi_send_internal = log_schwung,
         .midi_send_external = log_external,
         .get_clock_status = host_clock,
         .get_bpm = host_bpm,
@@ -393,6 +434,8 @@ int main(void) {
 
     test_both_routes_and_voice_release(api, instance);
     test_routes_use_destination_usb_midi_cables(api, instance);
+    test_schwung_preview_uses_internal_chain(api, instance);
+    test_known_broken_host_suppresses_native_output(api, instance);
     test_route_change_panics_old_destination(api, instance);
     test_strum_is_scheduled_across_blocks(api, instance);
     test_loop_slots_and_state(api, instance);
