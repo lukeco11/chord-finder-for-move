@@ -2,6 +2,7 @@ export const SETTINGS_SCHEMA_VERSION = 2;
 export const ROUTES = Object.freeze(['move', 'external', 'both']);
 export const PREVIEW_ROUTES = Object.freeze([...ROUTES, 'schwung']);
 export const EXPLORATION_MODES = Object.freeze(['root', 'next', 'voice']);
+const HOST_VERSION_PATH = '/data/UserData/schwung/host/version.txt';
 
 export const DEFAULT_SETTINGS = Object.freeze({
   schemaVersion: SETTINGS_SCHEMA_VERSION,
@@ -69,9 +70,25 @@ export function migrateSettings(input = {}) {
 }
 
 export function hostSupportsActiveMoveInject(globals = globalThis) {
-  const hasOvertakeInput = typeof globals.shadow_inbound_pad_midi_active === 'function';
   const hasDedicatedOutput = typeof globals.shadow_overtake_move_inject_active === 'function';
-  return !hasOvertakeInput || hasDedicatedOutput;
+  if (hasDedicatedOutput) return true;
+
+  const hasOvertakeInput = typeof globals.shadow_inbound_pad_midi_active === 'function';
+  if (!hasOvertakeInput) return true;
+
+  let version = '';
+  try {
+    if (typeof globals.host_read_file === 'function') {
+      version = String(globals.host_read_file(HOST_VERSION_PATH) || '').trim();
+    }
+  } catch (_error) {
+    return false;
+  }
+  const match = version.match(/^v?(\d+)\.(\d+)\.(\d+)/);
+  if (!match) return false;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return major === 0 && minor < 12;
 }
 
 export function createUiState(settings = {}) {

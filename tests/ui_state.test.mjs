@@ -18,7 +18,7 @@ import {
   rightPadIndex,
   takeLedBatch,
   hostSupportsActiveMoveInject,
-} from '../src/ui_state_v5.mjs';
+} from '../src/ui_state_v6.mjs';
 
 const chord = Object.freeze({
   tonicOffset: 0,
@@ -140,13 +140,21 @@ test('allows Schwung only as a live preview route', () => {
   assert.equal(migrateSettings({ previewRoute: 'schwung' }).previewRoute, 'schwung');
 });
 
-test('detects only the Schwung host range with diverted overtake output', () => {
-  assert.equal(hostSupportsActiveMoveInject({}), true);
-  assert.equal(hostSupportsActiveMoveInject({ shadow_inbound_pad_midi_active() {} }), false);
-  assert.equal(hostSupportsActiveMoveInject({
+test('keeps Move output on 0.11.6 while gating unpatched 0.12 hosts', () => {
+  const host = (version, dedicated = false) => ({
     shadow_inbound_pad_midi_active() {},
-    shadow_overtake_move_inject_active() {},
-  }), true);
+    host_read_file(path) {
+      assert.equal(path, '/data/UserData/schwung/host/version.txt');
+      return version;
+    },
+    ...(dedicated ? { shadow_overtake_move_inject_active() {} } : {}),
+  });
+
+  assert.equal(hostSupportsActiveMoveInject({}), true);
+  assert.equal(hostSupportsActiveMoveInject(host('0.11.6\n')), true);
+  assert.equal(hostSupportsActiveMoveInject(host('0.12.0')), false);
+  assert.equal(hostSupportsActiveMoveInject(host('0.12.1\n')), false);
+  assert.equal(hostSupportsActiveMoveInject(host('0.12.1', true)), true);
 });
 
 test('cycles explicit root, next, and voice exploration modes', () => {

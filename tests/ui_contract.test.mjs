@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 const source = readFileSync(new URL('../src/ui.js', import.meta.url), 'utf8');
 
 test('imports upgraded UI state through a cache-safe module generation', () => {
-  assert.match(source, /from '\.\/ui_state_v5\.mjs';/);
+  assert.match(source, /from '\.\/ui_state_v6\.mjs';/);
 });
 
 test('first DSP poll establishes a baseline without replacing the forced startup LED queue', () => {

@@ -23,7 +23,7 @@ import {
   leftPadIndex, migrateSettings, nextExplorationMode, pressCandidate,
   progressionLength, progressionNeighbors, releaseCandidate, revoiceHeldCandidates,
   rightPadIndex, PREVIEW_ROUTES, ROUTES, takeLedBatch, hostSupportsActiveMoveInject,
-} from './ui_state_v5.mjs';
+} from './ui_state_v6.mjs';
 
 const SETTINGS_PATH = '/data/UserData/schwung/modules/tools/chord-finder/settings.json';
 const ROUTE_LABELS = { move: 'MOVE/USB-C', external: 'USB-A', both: 'BOTH', schwung: 'SCHWUNG' };

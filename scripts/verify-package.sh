@@ -18,7 +18,7 @@ expected=$(printf '%s\n' \
   chord-finder/keyboard.mjs \
   chord-finder/module.json \
   chord-finder/ui.js \
-  chord-finder/ui_state_v5.mjs | LC_ALL=C sort)
+  chord-finder/ui_state_v6.mjs | LC_ALL=C sort)
 actual=$(tar -tzf "$ARCHIVE" | LC_ALL=C sort)
 if [ "$actual" != "$expected" ]; then
   echo "Archive runtime files do not match the expected module contents." >&2
@@ -38,7 +38,7 @@ for pair in \
   ui.js:src/ui.js \
   harmony.mjs:src/harmony.mjs \
   keyboard.mjs:src/keyboard.mjs \
-  ui_state_v5.mjs:src/ui_state_v5.mjs \
+  ui_state_v6.mjs:src/ui_state_v6.mjs \
   help.json:src/help.json \
   dsp.so:dist/dsp.so \
   install-swap:dist/install-swap \
