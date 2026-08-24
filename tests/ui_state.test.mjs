@@ -12,11 +12,13 @@ import {
   pressCandidate,
   progressionLength,
   progressionNeighbors,
+  PREVIEW_ROUTES,
   revoiceHeldCandidates,
   releaseCandidate,
   rightPadIndex,
   takeLedBatch,
-} from '../src/ui_state_v4.mjs';
+  hostSupportsActiveMoveInject,
+} from '../src/ui_state_v5.mjs';
 
 const chord = Object.freeze({
   tonicOffset: 0,
@@ -130,6 +132,21 @@ test('migrates incomplete settings into the versioned persisted shape', () => {
   assert.equal(settings.progression.length, 8);
   assert.deepEqual(settings.progression[0], chord);
   assert.equal(settings.gate, 85);
+});
+
+test('allows Schwung only as a live preview route', () => {
+  assert.deepEqual(PREVIEW_ROUTES, ['move', 'external', 'both', 'schwung']);
+  assert.equal(migrateSettings({ route: 'schwung' }).route, 'move');
+  assert.equal(migrateSettings({ previewRoute: 'schwung' }).previewRoute, 'schwung');
+});
+
+test('detects only the Schwung host range with diverted overtake output', () => {
+  assert.equal(hostSupportsActiveMoveInject({}), true);
+  assert.equal(hostSupportsActiveMoveInject({ shadow_inbound_pad_midi_active() {} }), false);
+  assert.equal(hostSupportsActiveMoveInject({
+    shadow_inbound_pad_midi_active() {},
+    shadow_overtake_move_inject_active() {},
+  }), true);
 });
 
 test('cycles explicit root, next, and voice exploration modes', () => {
