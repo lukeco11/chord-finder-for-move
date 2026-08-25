@@ -13,12 +13,13 @@ import {
   progressionLength,
   progressionNeighbors,
   PREVIEW_ROUTES,
+  ROUTES,
   revoiceHeldCandidates,
   releaseCandidate,
   rightPadIndex,
   takeLedBatch,
   hostSupportsActiveMoveInject,
-} from '../src/ui_state_v6.mjs';
+} from '../src/ui_state_v7.mjs';
 
 const chord = Object.freeze({
   tonicOffset: 0,
@@ -134,9 +135,10 @@ test('migrates incomplete settings into the versioned persisted shape', () => {
   assert.equal(settings.gate, 85);
 });
 
-test('allows Schwung only as a live preview route', () => {
+test('allows Schwung as both a progression and live preview route', () => {
+  assert.deepEqual(ROUTES, ['move', 'external', 'both', 'schwung']);
   assert.deepEqual(PREVIEW_ROUTES, ['move', 'external', 'both', 'schwung']);
-  assert.equal(migrateSettings({ route: 'schwung' }).route, 'move');
+  assert.equal(migrateSettings({ route: 'schwung' }).route, 'schwung');
   assert.equal(migrateSettings({ previewRoute: 'schwung' }).previewRoute, 'schwung');
 });
 

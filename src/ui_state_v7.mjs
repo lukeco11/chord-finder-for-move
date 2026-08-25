@@ -1,6 +1,6 @@
 export const SETTINGS_SCHEMA_VERSION = 2;
-export const ROUTES = Object.freeze(['move', 'external', 'both']);
-export const PREVIEW_ROUTES = Object.freeze([...ROUTES, 'schwung']);
+export const ROUTES = Object.freeze(['move', 'external', 'both', 'schwung']);
+export const PREVIEW_ROUTES = ROUTES;
 export const EXPLORATION_MODES = Object.freeze(['root', 'next', 'voice']);
 const HOST_VERSION_PATH = '/data/UserData/schwung/host/version.txt';
 
