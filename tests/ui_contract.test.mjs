@@ -26,9 +26,34 @@ test('main display renders the live piano-key visualization', () => {
   assert.match(source, /drawPianoKeyboard\(\);/);
 });
 
-test('voice releases and transport stop recompute the sounding-note display', () => {
+test('voice releases and Move transport stop recompute only the relevant display voice', () => {
   assert.match(source, /function stopVoice\(owner\)[\s\S]{0,180}hideDisplayVoice\(owner\);/);
-  assert.match(source, /if \(!running\)[\s\S]{0,160}clearVisualVoices\('Progression stopped'/);
+  assert.match(source, /if \(!running\)[\s\S]{0,160}hideDisplayVoice\(LOOP_DISPLAY_OWNER\);/);
+  assert.doesNotMatch(source, /if \(!running\)[\s\S]{0,180}clearVisualVoices/);
+});
+
+test('Move Play arms the progression without independently toggling it off', () => {
+  const playBody = source.match(/if \(d1 === MovePlay && d2 > 0\) \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+
+  assert.match(source, /let loopArmed = false;/);
+  assert.match(playBody, /sendCommand\(\{ op: 'transport', running: 1 \}/);
+  assert.doesNotMatch(playBody, /running\s*=\s*!running|running:\s*0/);
+});
+
+test('DSP polling distinguishes armed wait from active Move playback', () => {
+  assert.match(source, /const nextArmed = Boolean\(next\.armed\);/);
+  assert.match(source, /loopArmed = nextArmed;/);
+  assert.match(source, /running \? 'PLAY' : \(loopArmed \? 'WAIT' : 'OFF'\)/);
+  assert.match(source, /RATE_SHORT_LABELS = \['16', '8', '4', '2', '1B'\]/);
+});
+
+test('only full unload disarms transport before panic cleanup', () => {
+  const unloadBody = source.match(/globalThis\.onUnload = function onUnload\(\) \{([\s\S]*?)\n\};/)?.[1] ?? '';
+  const parkedBody = source.match(/if \(globalThis\.overtakeParked\) \{([\s\S]*?)\n  \}/)?.[1] ?? '';
+
+  assert.match(unloadBody, /sendCommand\(\{ op: 'transport', running: 0 \}/);
+  assert.ok(unloadBody.indexOf("op: 'transport'") < unloadBody.indexOf("op: 'panic'"));
+  assert.doesNotMatch(parkedBody, /op: 'transport'/);
 });
 
 test('loop polling invalidates on each DSP cycle and handles an empty running loop', () => {
@@ -38,7 +63,6 @@ test('loop polling invalidates on each DSP cycle and handles an empty running lo
 
 test('every UI command that triggers DSP panic clears all display voices', () => {
   assert.match(source, /function clearVisualVoices\([\s\S]{0,260}clearDisplayVoices\(displayVoices\)/);
-  assert.match(source, /if \(!running\)[\s\S]{0,180}clearVisualVoices\('Progression stopped'/);
   assert.match(source, /menuCursor === 0 \|\| menuCursor === 1 \|\| menuCursor === 2[\s\S]{0,180}clearVisualVoices/);
 });
 

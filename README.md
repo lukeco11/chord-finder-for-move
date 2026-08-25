@@ -69,9 +69,9 @@ installed version with this repository's `release.json`.
 2. Scroll below the divider to **Chord Finder**.
 3. Press the jog wheel to load it.
 
-To suspend Chord Finder while its progression keeps running, use
-**Shift + Volume touch + Back**. To exit fully and stop its notes, use
-**Shift + Volume touch + Jog Click**.
+Press **Back** to park Chord Finder and return to Move while leaving its
+progression armed. Press **Shift + Back** to exit fully, disarm the progression,
+and stop its notes.
 
 ## Make it play sound
 
@@ -130,7 +130,14 @@ There are eight progression slots, shown on Step buttons 1-8.
 - Press **Capture** to turn on append recording. Each chord you audition is
   placed in the next empty slot. If you hold a chord and change its root, each
   audible revoicing is captured as the next step.
-- Press **Play** to start or stop the progression loop.
+- Press **Play** once to arm the progression and control Move's transport. Once
+  armed, Move's Play button starts and stops both Move and Chord Finder from any
+  screen. Press **Back** to edit another track while the progression continues.
+
+Chord Finder follows Move's absolute beat position, so the progression restarts
+at slot 1 with Move and cannot gradually drift away from Move's sequences. The
+display shows `LOOP OFF` when disarmed, `LOOP WAIT` when armed while Move is
+stopped, and `LOOP PLAY` while following Move.
 
 The **Rate** encoder changes how long each progression slot lasts, from a 1/16
 note to one bar. **Gate** controls how much of that step the chord is held.
@@ -152,7 +159,9 @@ key or octave transposes the saved progression.
 | Shift + Step | Store the held or last chord |
 | Delete + Step | Clear a progression slot |
 | Capture | Toggle append recording |
-| Play | Start or stop the progression loop |
+| Play | Arm the progression and start or stop Move transport |
+| Back | Park Chord Finder while its armed progression follows Move |
+| Shift + Back | Fully exit, disarm, and stop Chord Finder |
 | Menu | MIDI channel, output routes, gate, and output test |
 
 ## Record MIDI in a DAW

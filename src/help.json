@@ -37,7 +37,7 @@
       "title": "Piano Display",
       "lines": [
         "The lower display",
-        "shows one octave.",
+        "shows two octaves.",
         "Filled white keys",
         "and inverted black",
         "keys are sounding.",
@@ -79,7 +79,10 @@
         "to preview it.",
         "Tap an empty step",
         "for gap suggestions.",
-        "Play toggles the loop."
+        "Play arms the loop",
+        "and controls Move.",
+        "Once armed, Move Play",
+        "works from any screen."
       ]
     },
     {
@@ -126,13 +129,17 @@
     {
       "title": "Exit Safety",
       "lines": [
-        "Back suspends the UI",
-        "while playback keeps",
-        "running.",
+        "Back parks the UI.",
+        "The armed progression",
+        "keeps following Move",
+        "while you edit tracks.",
         "",
         "Shift + Back exits.",
-        "LOOP STOP means the",
-        "progression is idle.",
+        "LOOP OFF is disarmed.",
+        "LOOP WAIT is armed",
+        "while Move is stopped.",
+        "LOOP PLAY follows the",
+        "current Move beat.",
         "Route changes, exit,",
         "and unload send note",
         "cleanup."

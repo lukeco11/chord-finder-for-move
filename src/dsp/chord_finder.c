@@ -56,11 +56,15 @@ typedef struct {
     uint8_t rate;
     uint8_t move_available;
     uint16_t strum_ms;
+    uint8_t armed;
     uint8_t running;
+    uint8_t beat_sync_valid;
     uint8_t loop_cursor;
     uint8_t loop_length;
     int8_t displayed_step;
     int32_t samples_to_next;
+    uint64_t last_grid_step;
+    double last_beat_position;
     uint32_t loop_cycle;
     uint32_t dropped;
     uint32_t last_seq;
@@ -341,25 +345,90 @@ static int loop_step_samples(chord_finder_t *s) {
     return samples < MOVE_FRAMES_PER_BLOCK ? MOVE_FRAMES_PER_BLOCK : samples;
 }
 
-static void fire_loop_step(chord_finder_t *s) {
+static double loop_step_beats(chord_finder_t *s) {
+    static const double beats[5] = { 0.25, 0.5, 1.0, 2.0, 4.0 };
+    return beats[s->rate > 4 ? 4 : s->rate];
+}
+
+static void fire_loop_index(chord_finder_t *s, uint64_t grid_step) {
     int step_samples = loop_step_samples(s);
+    uint8_t slot_index;
     slot_t *slot;
     s->loop_cycle++;
     if (s->loop_length == 0) {
         s->displayed_step = -1;
-        s->samples_to_next += step_samples;
         return;
     }
-    slot = &s->slots[s->loop_cursor];
+    slot_index = (uint8_t)(grid_step % s->loop_length);
+    slot = &s->slots[slot_index];
     release_voice(s, LOOP_OWNER);
-    s->displayed_step = (int8_t)s->loop_cursor;
+    s->displayed_step = (int8_t)slot_index;
     if (slot->count > 0) {
         int gate_samples = step_samples * s->gate / 100;
         start_voice(s, LOOP_OWNER, slot->notes, slot->count, slot->velocity,
                     s->route, s->channel, gate_samples);
     }
+}
+
+static void fire_free_loop_step(chord_finder_t *s) {
+    if (s->loop_length == 0) {
+        s->displayed_step = -1;
+        s->samples_to_next += loop_step_samples(s);
+        return;
+    }
+    fire_loop_index(s, s->loop_cursor);
     s->loop_cursor = (uint8_t)((s->loop_cursor + 1) % s->loop_length);
-    s->samples_to_next += step_samples;
+    s->samples_to_next += loop_step_samples(s);
+}
+
+static void stop_synced_playback(chord_finder_t *s) {
+    release_voice(s, LOOP_OWNER);
+    s->running = 0;
+    s->beat_sync_valid = 0;
+    s->displayed_step = -1;
+}
+
+static void sync_to_move_transport(chord_finder_t *s, int frames) {
+    double beat;
+    double step_beats;
+    double offset;
+    double boundary_tolerance;
+    uint64_t grid_step;
+
+    if (!s->armed || s->loop_length == 0) {
+        stop_synced_playback(s);
+        return;
+    }
+    beat = s->host->get_beat_position();
+    if (beat < 0.0) {
+        stop_synced_playback(s);
+        return;
+    }
+
+    step_beats = loop_step_beats(s);
+    grid_step = (uint64_t)(beat / step_beats);
+    offset = beat - ((double)grid_step * step_beats);
+    boundary_tolerance = ((double)frames / (double)s->sample_rate)
+        * ((double)current_bpm(s) / 60.0) * 1.5;
+    s->running = 1;
+
+    if (!s->beat_sync_valid) {
+        s->beat_sync_valid = 1;
+        s->last_grid_step = grid_step;
+        s->last_beat_position = beat;
+        if (offset <= boundary_tolerance) fire_loop_index(s, grid_step);
+        return;
+    }
+
+    if (beat < s->last_beat_position) {
+        release_voice(s, LOOP_OWNER);
+        s->displayed_step = -1;
+        if (offset <= boundary_tolerance) fire_loop_index(s, grid_step);
+    } else if (grid_step != s->last_grid_step) {
+        fire_loop_index(s, grid_step);
+    }
+    s->last_grid_step = grid_step;
+    s->last_beat_position = beat;
 }
 
 static void *create_instance(const char *module_dir, const char *json_defaults) {
@@ -416,8 +485,13 @@ static void set_command(chord_finder_t *s, const char *json) {
         s->gate = (uint8_t)json_int(json, "gate", s->gate);
         if (s->gate < 10) s->gate = 10;
         if (s->gate > 100) s->gate = 100;
-        s->rate = (uint8_t)json_int(json, "rate", s->rate);
-        if (s->rate > 4) s->rate = 4;
+        {
+            uint8_t old_rate = s->rate;
+            s->rate = (uint8_t)json_int(json, "rate", s->rate);
+            if (s->rate > 4) s->rate = 4;
+            if (s->rate != old_rate && s->host && s->host->get_beat_position)
+                stop_synced_playback(s);
+        }
     } else if (strcmp(op, "voice_on") == 0) {
         uint8_t notes[MAX_NOTES];
         int owner = json_int(json, "owner", -1);
@@ -449,13 +523,17 @@ static void set_command(chord_finder_t *s, const char *json) {
         }
     } else if (strcmp(op, "transport") == 0) {
         int running = json_int(json, "running", 0) ? 1 : 0;
-        if (running && s->loop_length > 0 && !s->running) {
-            s->running = 1;
+        if (running && s->loop_length > 0 && !s->armed) {
+            s->armed = 1;
+            s->beat_sync_valid = 0;
             s->loop_cursor = 0;
             s->displayed_step = -1;
             s->samples_to_next = 0;
-        } else if (!running && s->running) {
+            if (!s->host || !s->host->get_beat_position) s->running = 1;
+        } else if (!running && s->armed) {
+            s->armed = 0;
             s->running = 0;
+            s->beat_sync_valid = 0;
             s->loop_cursor = 0;
             s->displayed_step = -1;
             s->samples_to_next = 0;
@@ -502,8 +580,8 @@ static int get_param(void *instance, const char *key, char *buf, int buf_len) {
     chord_finder_t *s = (chord_finder_t *)instance;
     if (!s || !key || !buf || buf_len <= 0 || strcmp(key, "state") != 0) return -1;
     return snprintf(buf, (size_t)buf_len,
-                    "{\"v\":1,\"running\":%d,\"step\":%d,\"cycle\":%u,\"length\":%d,\"route\":%d,\"channel\":%d,\"moveAvailable\":%d,\"activeOwners\":%d,\"pendingOffs\":%d,\"dropped\":%u,\"ack\":%u}",
-                    s->running, s->displayed_step, s->loop_cycle, s->loop_length, s->route,
+                    "{\"v\":1,\"armed\":%d,\"running\":%d,\"step\":%d,\"cycle\":%u,\"length\":%d,\"route\":%d,\"channel\":%d,\"moveAvailable\":%d,\"activeOwners\":%d,\"pendingOffs\":%d,\"dropped\":%u,\"ack\":%u}",
+                    s->armed, s->running, s->displayed_step, s->loop_cycle, s->loop_length, s->route,
                     s->channel, s->move_available, active_owner_count(s), pending_off_count(s),
                     s->dropped, s->last_seq);
 }
@@ -519,9 +597,13 @@ static void render_block(void *instance, int16_t *audio, int frames) {
     if (audio && frames > 0) memset(audio, 0, (size_t)frames * 2U * sizeof(int16_t));
     if (!s) return;
     retry_pending_offs(s, 8);
-    if (s->running && s->samples_to_next <= 0) fire_loop_step(s);
+    if (s->host && s->host->get_beat_position) {
+        sync_to_move_transport(s, frames);
+    } else if (s->running && s->samples_to_next <= 0) {
+        fire_free_loop_step(s);
+    }
     process_events(s, frames);
-    if (!s->running) return;
+    if (!s->running || (s->host && s->host->get_beat_position)) return;
     s->samples_to_next -= frames;
 }
 
