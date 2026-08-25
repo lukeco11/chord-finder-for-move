@@ -333,9 +333,8 @@ function displayRootPitchClass() {
   return displayRootPc;
 }
 
-function markerColor(key, sounding) {
-  if (!sounding) return 1;
-  return key.black ? 1 : 0;
+function markerColor(sounding) {
+  return sounding ? 0 : 1;
 }
 
 function drawPianoMarkers(keyboard) {
@@ -358,7 +357,7 @@ function drawPianoMarkers(keyboard) {
       width = 5;
     }
     if (marker.position === 'right') x = key.x + key.width - 3;
-    fill_rect(x, y, width, 2, markerColor(key, key.sounding));
+    fill_rect(x, y, width, 2, markerColor(key.sounding));
   }
 }
 
@@ -383,8 +382,8 @@ function drawPianoKeyboard() {
     if (key.octaveLabel) print(key.x + 1, PIANO_Y + 2, key.octaveLabel.substring(1), key.sounding ? 0 : 1);
   }
   for (const key of keyboard.blackKeys) {
-    fill_rect(key.x, PIANO_Y, key.width, BLACK_KEY_HEIGHT, key.sounding ? 0 : 1);
-    if (key.sounding) draw_rect(key.x, PIANO_Y, key.width, BLACK_KEY_HEIGHT, 1);
+    fill_rect(key.x, PIANO_Y, key.width, BLACK_KEY_HEIGHT, key.sounding ? 1 : 0);
+    draw_rect(key.x, PIANO_Y, key.width, BLACK_KEY_HEIGHT, 1);
   }
   drawPianoMarkers(keyboard);
   drawPianoOverflow(keyboard);

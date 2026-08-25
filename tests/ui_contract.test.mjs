@@ -83,6 +83,11 @@ test('piano renders a register-aware two-octave viewport and overflow counts', (
   assert.match(source, /keyboard\.overflowAbove/);
 });
 
+test('all sounding piano keys fill solid while idle black keys remain outlined', () => {
+  assert.match(source, /for \(const key of keyboard\.blackKeys\) \{[\s\S]{0,220}fill_rect\([^\n]*key\.sounding \? 1 : 0\);[\s\S]{0,120}draw_rect\(/);
+  assert.match(source, /function markerColor\([^)]*\) \{[\s\S]{0,100}return sounding \? 0 : 1;/);
+});
+
 test('DSP configuration reports whether active native injection is supported', () => {
   assert.match(source, /hostSupportsActiveMoveInject\(globalThis\)/);
   assert.match(source, /function configureDsp\(\)[\s\S]{0,300}move_available: moveAvailable \? 1 : 0/);
