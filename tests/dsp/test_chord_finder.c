@@ -18,6 +18,7 @@ static packet_log_t external_log;
 static packet_log_t schwung_log;
 static int fail_move_sends;
 static int fail_external_sends;
+static double host_beat_position = -1.0;
 
 static int log_move(const uint8_t *msg, int len) {
     assert(len == 4);
@@ -47,6 +48,7 @@ static int log_schwung(const uint8_t *msg, int len) {
 
 static float host_bpm(void) { return 120.0f; }
 static int host_clock(void) { return MOVE_CLOCK_STATUS_RUNNING; }
+static double host_beat(void) { return host_beat_position; }
 
 static void reset_logs(void) {
     memset(&move_log, 0, sizeof(move_log));
@@ -418,7 +420,96 @@ static void test_empty_progression_does_not_start_transport(plugin_api_v2_t *api
     render(api, instance, 1);
     assert(api->get_param(instance, "state", state, sizeof(state)) > 0);
     assert(strstr(state, "\"running\":0") != NULL);
+    assert(strstr(state, "\"armed\":0") != NULL);
     assert(strstr(state, "\"length\":0") != NULL);
+}
+
+static void clear_progression(plugin_api_v2_t *api, void *instance) {
+    for (int slot = 0; slot < 8; slot++) {
+        char command[64];
+        snprintf(command, sizeof(command), "{\"v\":1,\"op\":\"slot_clear\",\"slot\":%d}", slot);
+        api->set_param(instance, "command", command);
+    }
+}
+
+static void test_move_clock_arms_waits_and_tracks_absolute_steps(plugin_api_v2_t *api,
+                                                                 void *instance) {
+    char state[256];
+    reset_logs();
+    clear_progression(api, instance);
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"config\",\"route\":0,\"channel\":0,\"strum_ms\":0,\"gate\":100,\"rate\":2}");
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"slot_set\",\"slot\":0,\"notes\":[60]}");
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"slot_set\",\"slot\":1,\"notes\":[62]}");
+
+    host_beat_position = -1.0;
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"transport\",\"running\":1}");
+    render(api, instance, 1);
+    assert(move_log.count == 0);
+    assert(api->get_param(instance, "state", state, sizeof(state)) > 0);
+    assert(strstr(state, "\"armed\":1") != NULL);
+    assert(strstr(state, "\"running\":0") != NULL);
+
+    host_beat_position = 0.0;
+    render(api, instance, 1);
+    assert(move_log.count == 1);
+    assert(move_log.packets[0][2] == 60);
+    assert(api->get_param(instance, "state", state, sizeof(state)) > 0);
+    assert(strstr(state, "\"running\":1") != NULL);
+    assert(strstr(state, "\"step\":0") != NULL);
+
+    host_beat_position = 0.75;
+    render(api, instance, 1);
+    assert(move_log.count == 1);
+
+    host_beat_position = 1.0;
+    render(api, instance, 1);
+    assert(move_log.count == 3);
+    assert(move_log.packets[2][2] == 62);
+
+    host_beat_position = 8.0;
+    render(api, instance, 1);
+    assert(move_log.count == 5);
+    assert(move_log.packets[4][2] == 60);
+
+    host_beat_position = -1.0;
+    render(api, instance, 1);
+    assert(move_log.count == 6);
+    assert(api->get_param(instance, "state", state, sizeof(state)) > 0);
+    assert(strstr(state, "\"armed\":1") != NULL);
+    assert(strstr(state, "\"running\":0") != NULL);
+    assert(strstr(state, "\"step\":-1") != NULL);
+
+    host_beat_position = 4.0;
+    render(api, instance, 1);
+    assert(move_log.count == 7);
+    assert(move_log.packets[6][2] == 60);
+
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"transport\",\"running\":0}");
+    assert(move_log.count == 8);
+    assert(api->get_param(instance, "state", state, sizeof(state)) > 0);
+    assert(strstr(state, "\"armed\":0") != NULL);
+    assert(strstr(state, "\"running\":0") != NULL);
+}
+
+static void test_move_clock_arming_mid_step_waits_for_next_boundary(plugin_api_v2_t *api,
+                                                                    void *instance) {
+    reset_logs();
+    clear_progression(api, instance);
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"config\",\"route\":0,\"channel\":0,\"strum_ms\":0,\"gate\":100,\"rate\":2}");
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"slot_set\",\"slot\":0,\"notes\":[60]}");
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"slot_set\",\"slot\":1,\"notes\":[62]}");
+
+    host_beat_position = 0.5;
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"transport\",\"running\":1}");
+    render(api, instance, 1);
+    assert(move_log.count == 0);
+
+    host_beat_position = 1.0;
+    render(api, instance, 1);
+    assert(move_log.count == 1);
+    assert(move_log.packets[0][2] == 62);
+
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"transport\",\"running\":0}");
 }
 
 static void test_destroy_retries_every_deferred_note_off(plugin_api_v2_t *api, void *instance) {
@@ -478,6 +569,16 @@ int main(void) {
     test_output_test_plays_and_releases_a_triad(api, instance);
     test_panic_retries_rejected_cleanup(api, instance);
     test_empty_progression_does_not_start_transport(api, instance);
+
+    host_api_v1_t synced_host = host;
+    synced_host.get_beat_position = host_beat;
+    api = move_plugin_init_v2(&synced_host);
+    void *synced_instance = api->create_instance(".", NULL);
+    assert(synced_instance != NULL);
+    test_move_clock_arms_waits_and_tracks_absolute_steps(api, synced_instance);
+    test_move_clock_arming_mid_step_waits_for_next_boundary(api, synced_instance);
+    api->destroy_instance(synced_instance);
+
     test_destroy_retries_every_deferred_note_off(api, instance);
     puts("DSP tests passed");
     return 0;

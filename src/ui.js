@@ -30,6 +30,7 @@ const ROUTE_LABELS = { move: 'MOVE/USB-C', external: 'USB-A', both: 'BOTH', schw
 const ROUTE_SHORT = { move: 'M', external: 'A', both: 'B', schwung: 'S' };
 const ROUTE_VALUES = { move: 0, external: 1, both: 2, schwung: 3 };
 const RATE_LABELS = ['1/16', '1/8', '1/4', '1/2', '1 BAR'];
+const RATE_SHORT_LABELS = ['16', '8', '4', '2', '1B'];
 const DIATONIC_COLORS = [BrightGreen, ForestGreen, DullGreen];
 const COLOR_COLORS = [VividYellow, Ochre, BurntOrange];
 const MENU_ITEMS = ['MIDI CHANNEL', 'OUTPUT ROUTE', 'PREVIEW ROUTE', 'GLOBAL GATE', 'TEST OUTPUT'];
@@ -54,6 +55,7 @@ let displayChord = null;
 let topNotePc = null;
 let currentLabel = 'Choose a note';
 let currentCategory = 'SCALE ROOT';
+let loopArmed = false;
 let running = false;
 let loopStep = -1;
 let loopCycle = -1;
@@ -275,7 +277,7 @@ function queueLedRefresh() {
     queueLed(16 + index, color);
   }
   queueLed(MoveCapture, captureArmed ? WhiteLedBright : WhiteLedDim, true);
-  queueLed(MovePlay, running ? BrightGreen : Black, true);
+  queueLed(MovePlay, running ? BrightGreen : (loopArmed ? WhiteLedDim : Black), true);
   forceLedPaint = false;
 }
 
@@ -405,10 +407,8 @@ function drawMain() {
     ? `${currentCategory} ${romanNumeral(displayChord)}`
     : currentCategory;
   print(0, 30, truncate(category.toUpperCase(), 10), 1);
-  const transport = running && loopStep >= 0
-    ? `P${loopStep + 1}/${progressionLength(state.progression)}`
-    : (running ? 'WAIT' : 'STOP');
-  print(62, 30, truncate(`O${state.settings.octave} ${RATE_LABELS[state.settings.rate]} ${transport}`, 11), 1);
+  const transport = running ? 'PLAY' : (loopArmed ? 'WAIT' : 'OFF');
+  print(62, 30, `O${state.settings.octave} ${RATE_SHORT_LABELS[state.settings.rate]} ${transport}`, 1);
   drawPianoKeyboard();
 }
 
@@ -756,19 +756,23 @@ function pollDsp() {
   let next;
   try { next = JSON.parse(host_module_get_param('state') || 'null'); } catch (_error) { return; }
   if (!next || next.v !== 1) return;
+  const nextArmed = Boolean(next.armed);
   const nextRunning = Boolean(next.running);
   const parsedStep = Number(next.step);
   const nextStep = Number.isFinite(parsedStep) ? parsedStep : -1;
   const parsedCycle = Number(next.cycle);
   const nextCycle = Number.isFinite(parsedCycle) ? parsedCycle : loopCycle;
   if (!dspStateSeen) {
+    loopArmed = nextArmed;
     running = nextRunning;
     loopStep = nextStep;
     loopCycle = nextCycle;
     dspStateSeen = true;
     return;
   }
-  if (nextRunning !== running || nextStep !== loopStep || nextCycle !== loopCycle) {
+  if (nextArmed !== loopArmed || nextRunning !== running
+      || nextStep !== loopStep || nextCycle !== loopCycle) {
+    loopArmed = nextArmed;
     running = nextRunning;
     loopStep = nextStep;
     loopCycle = nextCycle;
@@ -800,7 +804,11 @@ function pollDsp() {
       }
     }
     if (!running) {
-      clearVisualVoices('Progression stopped', 'CHORD FINDER');
+      const snapshot = hideDisplayVoice(LOOP_DISPLAY_OWNER);
+      if (!snapshot.active) {
+        currentLabel = loopArmed ? 'Progression waiting' : 'Progression off';
+        currentCategory = 'CHORD FINDER';
+      }
     }
     queueLedRefresh();
     dirty = true;
@@ -849,6 +857,7 @@ globalThis.init = function init() {
     currentLabel = 'Choose a chord';
     currentCategory = 'CHORD FINDER';
   }
+  loopArmed = false;
   running = false;
   loopStep = -1;
   loopCycle = -1;
@@ -952,18 +961,16 @@ globalThis.onMidiMessageInternal = function onMidiMessageInternal(data) {
     return;
   }
   if (d1 === MovePlay && d2 > 0) {
-    if (!running && progressionLength(state.progression) === 0) {
+    if (progressionLength(state.progression) === 0) {
       showOverlay('NO CHORDS TO LOOP');
       announce('No chords to loop');
       return;
     }
-    running = !running;
-    sendCommand({ op: 'transport', running: running ? 1 : 0 }, true);
-    if (!running) {
-      clearVisualVoices('Progression stopped', 'CHORD FINDER');
-    }
+    const wasArmed = loopArmed;
+    loopArmed = true;
+    sendCommand({ op: 'transport', running: 1 }, true);
     queueLedRefresh();
-    announce(running ? 'Progression playing' : 'Progression stopped');
+    announce(wasArmed ? 'Move transport' : 'Progression armed');
     return;
   }
   if (d1 === MoveMenu && d2 > 0) {
@@ -1017,7 +1024,7 @@ globalThis.onMidiMessageExternal = function onMidiMessageExternal(_data) {};
 globalThis.onResume = function onResume() {
   configureDsp();
   syncAllSlots();
-  if (running) sendCommand({ op: 'transport', running: 1 }, true);
+  if (loopArmed) sendCommand({ op: 'transport', running: 1 }, true);
   forceLedPaint = true;
   queueLedRefresh();
   dirty = true;
@@ -1026,6 +1033,7 @@ globalThis.onResume = function onResume() {
 globalThis.onUnload = function onUnload() {
   for (const owner of [...liveOwners]) stopVoice(owner);
   clearHeldPadIntent();
+  sendCommand({ op: 'transport', running: 0 }, true);
   sendCommand({ op: 'panic' }, true);
   flushCommandQueue();
   saveSettings();
