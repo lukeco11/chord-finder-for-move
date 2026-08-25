@@ -120,6 +120,31 @@ static void test_schwung_preview_uses_internal_chain(plugin_api_v2_t *api, void 
     assert(schwung_log.packets[5][0] == 0x08);
 }
 
+static void test_schwung_progression_uses_internal_chain(plugin_api_v2_t *api, void *instance) {
+    reset_logs();
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"panic\"}");
+    for (int slot = 0; slot < 8; slot++) {
+        char command[64];
+        snprintf(command, sizeof(command), "{\"v\":1,\"op\":\"slot_clear\",\"slot\":%d}", slot);
+        api->set_param(instance, "command", command);
+    }
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"config\",\"route\":3,\"channel\":2,\"strum_ms\":0,\"gate\":50,\"rate\":0}");
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"slot_set\",\"slot\":0,\"notes\":[60,64,67]}");
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"transport\",\"running\":1}");
+    render(api, instance, 1);
+
+    assert(schwung_log.count == 3);
+    assert(move_log.count == 0);
+    assert(external_log.count == 0);
+    assert(schwung_log.packets[0][0] == 0x09);
+    assert(schwung_log.packets[0][1] == 0x92);
+
+    api->set_param(instance, "command", "{\"v\":1,\"op\":\"transport\",\"running\":0}");
+    render(api, instance, 1);
+    assert(schwung_log.count == 6);
+    assert(schwung_log.packets[5][0] == 0x08);
+}
+
 static void test_known_broken_host_suppresses_native_output(plugin_api_v2_t *api, void *instance) {
     char before[256];
     char after[256];
@@ -435,6 +460,7 @@ int main(void) {
     test_both_routes_and_voice_release(api, instance);
     test_routes_use_destination_usb_midi_cables(api, instance);
     test_schwung_preview_uses_internal_chain(api, instance);
+    test_schwung_progression_uses_internal_chain(api, instance);
     test_known_broken_host_suppresses_native_output(api, instance);
     test_route_change_panics_old_destination(api, instance);
     test_strum_is_scheduled_across_blocks(api, instance);

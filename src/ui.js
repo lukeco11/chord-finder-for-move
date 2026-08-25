@@ -15,15 +15,15 @@ import {
   SCALES, buildChordNotes, generateCandidates, getScale, leftPadNote, nameChord,
 } from './harmony.mjs';
 import {
-  BLACK_KEYS, WHITE_KEYS, clearDisplayVoices, createDisplayVoiceState,
-  keyboardKeyForPitchClass, keyboardState, startDisplayVoice, stopDisplayVoice,
-} from './keyboard.mjs';
+  clearDisplayVoices, createDisplayVoiceState, keyboardState, startDisplayVoice,
+  stopDisplayVoice,
+} from './keyboard_v2.mjs';
 import {
   appendProgressionChord, assignProgressionSlot, clearHeldCandidates, createUiState,
   leftPadIndex, migrateSettings, nextExplorationMode, pressCandidate,
   progressionLength, progressionNeighbors, releaseCandidate, revoiceHeldCandidates,
   rightPadIndex, PREVIEW_ROUTES, ROUTES, takeLedBatch, hostSupportsActiveMoveInject,
-} from './ui_state_v5.mjs';
+} from './ui_state_v7.mjs';
 
 const SETTINGS_PATH = '/data/UserData/schwung/modules/tools/chord-finder/settings.json';
 const ROUTE_LABELS = { move: 'MOVE/USB-C', external: 'USB-A', both: 'BOTH', schwung: 'SCHWUNG' };
@@ -333,51 +333,60 @@ function displayRootPitchClass() {
   return displayRootPc;
 }
 
-function markerColor(key, sounding) {
-  if (!sounding) return 1;
-  return key.black ? 1 : 0;
+function markerColor(sounding) {
+  return sounding ? 0 : 1;
 }
 
 function drawPianoMarkers(keyboard) {
-  const markers = [
-    { pitchClass: keyboard.bassPitchClass, position: 'left' },
-    { pitchClass: keyboard.rootPitchClass, position: 'center' },
-    { pitchClass: keyboard.topPitchClass, position: 'right' },
-  ];
+  const markers = [];
+  if (keyboard.bassNote !== null) markers.push({ note: keyboard.bassNote, position: 'left' });
+  for (const key of keyboard.keys) {
+    if (key.sounding && key.pitchClass === keyboard.rootPitchClass) {
+      markers.push({ note: key.note, position: 'center' });
+    }
+  }
+  if (keyboard.topNote !== null) markers.push({ note: keyboard.topNote, position: 'right' });
   for (const marker of markers) {
-    const key = keyboardKeyForPitchClass(marker.pitchClass);
+    const key = keyboard.keys.find((candidate) => candidate.note === marker.note);
     if (!key) continue;
-    const sounding = keyboard.counts[key.pitchClass] > 0;
     const y = PIANO_Y + (key.black ? BLACK_KEY_HEIGHT : PIANO_HEIGHT) - 3;
-    let x = key.x + 2;
+    let x = key.x + 1;
     let width = 2;
-    if (key.black) {
-      x = key.x + 1;
-      if (marker.position === 'center') x = key.x + 4;
-      if (marker.position === 'right') x = key.x + 7;
-    } else if (marker.position === 'center') {
+    if (marker.position === 'center') {
       x = key.x + Math.floor(key.width / 2) - 2;
       width = 5;
     }
-    if (!key.black && marker.position === 'right') x = key.x + key.width - 4;
-    fill_rect(x, y, width, 2, markerColor(key, sounding));
+    if (marker.position === 'right') x = key.x + key.width - 3;
+    fill_rect(x, y, width, 2, markerColor(key.sounding));
+  }
+}
+
+function drawPianoOverflow(keyboard) {
+  if (keyboard.overflowBelow > 0) {
+    fill_rect(0, PIANO_Y, 12, 9, 0);
+    print(0, PIANO_Y, `<${keyboard.overflowBelow}`, 1);
+  }
+  if (keyboard.overflowAbove > 0) {
+    fill_rect(116, PIANO_Y, 12, 9, 0);
+    print(116, PIANO_Y, `${keyboard.overflowAbove}>`, 1);
   }
 }
 
 function drawPianoKeyboard() {
-  const keyboard = keyboardState(displayNotes, displayRootPitchClass());
-  for (const key of WHITE_KEYS) {
-    const sounding = keyboard.counts[key.pitchClass] > 0;
-    if (sounding) fill_rect(key.x + 1, PIANO_Y + 1, key.width - 2, PIANO_HEIGHT - 2, 1);
+  const keyboard = keyboardState(displayNotes, displayRootPitchClass(),
+    48 + state.settings.key + state.settings.octave * 12);
+  for (const key of keyboard.whiteKeys) {
+    if (key.sounding) fill_rect(key.x + 1, PIANO_Y + 1, key.width - 2, PIANO_HEIGHT - 2, 1);
     draw_rect(key.x, PIANO_Y, key.width, PIANO_HEIGHT, 1);
-    print(key.x + Math.floor(key.width / 2) - 2, PIANO_Y + 14, key.label, sounding ? 0 : 1);
+    print(key.x + Math.floor(key.width / 2) - 2, PIANO_Y + 14, key.label, key.sounding ? 0 : 1);
+    if (key.octaveLabel) print(key.x + 1, PIANO_Y + 2, key.octaveLabel.substring(1), key.sounding ? 0 : 1);
   }
-  for (const key of BLACK_KEYS) {
-    const sounding = keyboard.counts[key.pitchClass] > 0;
-    fill_rect(key.x, PIANO_Y, key.width, BLACK_KEY_HEIGHT, sounding ? 0 : 1);
-    if (sounding) draw_rect(key.x, PIANO_Y, key.width, BLACK_KEY_HEIGHT, 1);
+  for (const key of keyboard.blackKeys) {
+    fill_rect(key.x, PIANO_Y, key.width, BLACK_KEY_HEIGHT, key.sounding ? 1 : 0);
+    draw_rect(key.x, PIANO_Y, key.width, BLACK_KEY_HEIGHT, 1);
   }
   drawPianoMarkers(keyboard);
+  drawPianoOverflow(keyboard);
 }
 
 function drawMain() {

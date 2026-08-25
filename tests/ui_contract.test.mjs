@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 const source = readFileSync(new URL('../src/ui.js', import.meta.url), 'utf8');
 
 test('imports upgraded UI state through a cache-safe module generation', () => {
-  assert.match(source, /from '\.\/ui_state_v5\.mjs';/);
+  assert.match(source, /from '\.\/ui_state_v7\.mjs';/);
 });
 
 test('first DSP poll establishes a baseline without replacing the forced startup LED queue', () => {
@@ -22,7 +22,7 @@ test('key and octave changes rebuild current absolute notes before candidate ran
 });
 
 test('main display renders the live piano-key visualization', () => {
-  assert.match(source, /import \{[^}]*createDisplayVoiceState[^}]*keyboardState[^}]*\} from '\.\/keyboard\.mjs';/s);
+  assert.match(source, /import \{[^}]*createDisplayVoiceState[^}]*keyboardState[^}]*\} from '\.\/keyboard_v2\.mjs';/s);
   assert.match(source, /drawPianoKeyboard\(\);/);
 });
 
@@ -47,8 +47,8 @@ test('key and octave edits do not transpose active display voices', () => {
   assert.doesNotMatch(updateBody, /displayNotes\s*=|showDisplayVoice|startDisplayVoice/);
 });
 
-test('black-key bass, root, and top markers use separated spans', () => {
-  assert.match(source, /if \(key\.black\)[\s\S]{0,220}x = key\.x \+ 1;[\s\S]{0,120}x = key\.x \+ 4;[\s\S]{0,120}x = key\.x \+ 7;/);
+test('bass, root, and top markers use distinct key-relative positions', () => {
+  assert.match(source, /marker\.position === 'center'[\s\S]{0,120}Math\.floor\(key\.width \/ 2\)[\s\S]{0,160}marker\.position === 'right'[\s\S]{0,120}key\.width/);
 });
 
 test('played roots refresh candidates before revoicing held right pads', () => {
@@ -69,9 +69,23 @@ test('right-pad velocity and held intent clear on release and lifecycle cleanup'
   assert.match(source, /if \(!parkedLastTick\)[\s\S]{0,240}clearHeldPadIntent\(\)/);
 });
 
-test('preview routing includes Schwung without expanding progression routes', () => {
+test('preview and progression routing both expose Schwung', () => {
   assert.match(source, /rightPadIndex, PREVIEW_ROUTES, ROUTES, takeLedBatch/);
   assert.match(source, /menuCursor === 1[\s\S]{0,180}ROUTES[\s\S]{0,220}menuCursor === 2[\s\S]{0,180}PREVIEW_ROUTES/);
+});
+
+test('piano renders a register-aware two-octave viewport and overflow counts', () => {
+  assert.match(source, /keyboardState\(displayNotes, displayRootPitchClass\(\),[\s\S]{0,100}state\.settings\.octave/);
+  assert.match(source, /for \(const key of keyboard\.whiteKeys\)/);
+  assert.match(source, /for \(const key of keyboard\.blackKeys\)/);
+  assert.match(source, /key\.octaveLabel/);
+  assert.match(source, /keyboard\.overflowBelow/);
+  assert.match(source, /keyboard\.overflowAbove/);
+});
+
+test('all sounding piano keys fill solid while idle black keys remain outlined', () => {
+  assert.match(source, /for \(const key of keyboard\.blackKeys\) \{[\s\S]{0,220}fill_rect\([^\n]*key\.sounding \? 1 : 0\);[\s\S]{0,120}draw_rect\(/);
+  assert.match(source, /function markerColor\([^)]*\) \{[\s\S]{0,100}return sounding \? 0 : 1;/);
 });
 
 test('DSP configuration reports whether active native injection is supported', () => {

@@ -403,7 +403,7 @@ static void set_command(chord_finder_t *s, const char *json) {
         int route = json_int(json, "route", s->route);
         int channel = json_int(json, "channel", s->channel);
         int move_available = json_int(json, "move_available", s->move_available) ? 1 : 0;
-        if (route < ROUTE_MOVE || route > ROUTE_BOTH) route = ROUTE_MOVE;
+        if (route < ROUTE_MOVE || route > ROUTE_SCHWUNG) route = ROUTE_MOVE;
         if (channel < 0) channel = 0;
         if (channel > 15) channel = 15;
         if (route != s->route || channel != s->channel || move_available != s->move_available)

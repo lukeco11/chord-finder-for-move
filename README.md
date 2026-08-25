@@ -92,9 +92,8 @@ chord and is useful when checking routing.
 
 To audition through a synth loaded in Schwung's signal chain, set **Preview
 Route** to `SCHWUNG` and match the Chord Finder MIDI channel to the chain
-slot's receive channel. This is a live-preview choice only: saved progression
-playback still uses the separate **Output Route** setting (`MOVE/USB-C`,
-`USB-A`, or `BOTH`).
+slot's receive channel. Set **Output Route** to `SCHWUNG` to play the saved
+progression through the same chain slot.
 
 ## Find chords
 

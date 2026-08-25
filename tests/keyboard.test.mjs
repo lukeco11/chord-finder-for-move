@@ -2,46 +2,51 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  BLACK_KEYS,
-  WHITE_KEYS,
   clearDisplayVoices,
   createDisplayVoiceState,
-  keyboardKeyForPitchClass,
   keyboardState,
   startDisplayVoice,
   stopDisplayVoice,
-} from '../src/keyboard.mjs';
+} from '../src/keyboard_v2.mjs';
 
-test('maps all twelve pitch classes onto a complete one-octave piano', () => {
-  assert.deepEqual(WHITE_KEYS.map((key) => key.pitchClass), [0, 2, 4, 5, 7, 9, 11]);
-  assert.deepEqual(BLACK_KEYS.map((key) => key.pitchClass), [1, 3, 6, 8, 10]);
+test('lays out a C-aligned two-octave keyboard using actual MIDI notes', () => {
+  const state = keyboardState([60, 64, 67, 72, 76], 0, 60);
 
-  for (let pitchClass = 0; pitchClass < 12; pitchClass += 1) {
-    const key = keyboardKeyForPitchClass(pitchClass);
-    assert.equal(key.pitchClass, pitchClass);
-    assert.ok(key.x >= 0 && key.x + key.width <= 128);
-  }
+  assert.equal(state.startNote, 60);
+  assert.equal(state.endNote, 83);
+  assert.equal(state.whiteKeys.length, 14);
+  assert.equal(state.blackKeys.length, 10);
+  assert.deepEqual(
+    state.keys.filter((key) => key.sounding).map((key) => key.note),
+    [60, 64, 67, 72, 76],
+  );
+  assert.equal(state.keys.find((key) => key.note === 60).octaveLabel, 'C4');
+  assert.equal(state.keys.find((key) => key.note === 72).octaveLabel, 'C5');
+  for (const key of state.keys) assert.ok(key.x >= 0 && key.x + key.width <= 128);
 });
 
-test('derives sounding tones, duplicates, bass, top, and root from MIDI notes', () => {
-  const state = keyboardState([72, 55, 60, 64, 67, 76], 12);
+test('counts sounding notes outside the two-octave window', () => {
+  const state = keyboardState([36, 60, 64, 67, 84, 88], 0, 60);
 
-  assert.deepEqual(state.counts, [2, 0, 0, 0, 2, 0, 0, 2, 0, 0, 0, 0]);
-  assert.equal(state.bassPitchClass, 7);
-  assert.equal(state.topPitchClass, 4);
+  assert.equal(state.startNote, 60);
+  assert.equal(state.overflowBelow, 1);
+  assert.equal(state.overflowAbove, 2);
+  assert.deepEqual(state.visibleNotes, [60, 64, 67]);
+  assert.equal(state.bassNote, 36);
+  assert.equal(state.topNote, 88);
   assert.equal(state.rootPitchClass, 0);
-  assert.deepEqual(state.soundingPitchClasses, [0, 4, 7]);
 });
 
-test('ignores invalid notes and returns an empty visual state safely', () => {
-  assert.deepEqual(keyboardState([-1, 128, NaN], null), {
-    counts: Array(12).fill(0),
-    soundingPitchClasses: [],
-    bassPitchClass: null,
-    topPitchClass: null,
-    rootPitchClass: null,
-  });
-  assert.equal(keyboardKeyForPitchClass(null), null);
+test('uses the fallback register and ignores invalid MIDI notes', () => {
+  const state = keyboardState([-1, 128, NaN], null, 73);
+
+  assert.equal(state.startNote, 72);
+  assert.equal(state.endNote, 95);
+  assert.deepEqual(state.visibleNotes, []);
+  assert.equal(state.overflowBelow, 0);
+  assert.equal(state.overflowAbove, 0);
+  assert.equal(state.bassNote, null);
+  assert.equal(state.topNote, null);
 });
 
 test('display voices combine sounding notes and fall back in press order', () => {
