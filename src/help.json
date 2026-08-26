@@ -68,8 +68,10 @@
     {
       "title": "Progression",
       "lines": [
+        "Hold right + Step",
+        "stores that chord.",
         "Shift + Step stores",
-        "the last chord.",
+        "held or last chord.",
         "",
         "Delete + Step clears.",
         "Capture toggles",

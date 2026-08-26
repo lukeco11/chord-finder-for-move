@@ -123,6 +123,8 @@ the suggested chords. Press it the same way again to remove the constraint.
 
 There are eight progression slots, shown on Step buttons 1-8.
 
+- Hold a right-pad chord and press **Step 1-8** to store it in that slot. You
+  can overwrite a populated slot this way.
 - Hold a chord, then press **Shift + Step 1-8** to store it in that slot. You
   can also store the last chord you auditioned.
 - Press a populated Step button to preview its chord.
@@ -155,8 +157,8 @@ key or octave transposes the saved progression.
 | Up / Down | Move the playable range by octaves |
 | Main jog click | Cycle ROOT, NEXT, and VOICE modes |
 | Shift + left pad | Set or clear a required top note |
-| Step 1-8 | Preview a stored chord or select an empty gap |
-| Shift + Step | Store the held or last chord |
+| Step 1-8 | Store a held right-pad chord, or preview / fill a gap |
+| Shift + Step | Store the held or last-auditioned chord |
 | Delete + Step | Clear a progression slot |
 | Capture | Toggle append recording |
 | Play | Arm the progression and start or stop Move transport |

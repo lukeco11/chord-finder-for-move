@@ -6,6 +6,7 @@ import {
   assignProgressionSlot,
   clearHeldCandidates,
   createUiState,
+  latestHeldCandidate,
   leftPadIndex,
   migrateSettings,
   nextExplorationMode,
@@ -14,6 +15,7 @@ import {
   progressionNeighbors,
   PREVIEW_ROUTES,
   ROUTES,
+  resolveStepPress,
   revoiceHeldCandidates,
   releaseCandidate,
   rightPadIndex,
@@ -96,6 +98,153 @@ test('clears every held snapshot and physical pad intent after panic cleanup', (
 
   assert.deepEqual(state.heldCandidates, Array(16).fill(null));
   assert.deepEqual(state.heldRight, Array(16).fill(false));
+  assert.deepEqual(state.heldRightOrder, []);
+});
+
+test('prefers the most recently pressed held right pad as the store snapshot', () => {
+  const state = createUiState();
+  const older = { ...chord, notes: [60, 64, 67], label: 'C', quality: 'major' };
+  const newer = { ...chord, tonicOffset: 7, notes: [67, 71, 74], label: 'G', quality: 'major' };
+  pressCandidate(state, 2, older);
+  pressCandidate(state, 5, newer);
+
+  assert.equal(latestHeldCandidate(state).label, 'G');
+  assert.deepEqual(latestHeldCandidate(state).notes, [67, 71, 74]);
+
+  releaseCandidate(state, 5);
+  assert.equal(latestHeldCandidate(state).label, 'C');
+});
+
+test('stores the press-time snapshot even after live candidates refresh', () => {
+  const state = createUiState();
+  const played = { ...chord, notes: [60, 64, 67], label: 'C', score: 9 };
+  pressCandidate(state, 4, played);
+  state.candidates[4] = { ...chord, tonicOffset: 9, notes: [69, 72, 76], label: 'Am' };
+
+  const decision = resolveStepPress(state, { slotIndex: 0 });
+
+  assert.equal(decision.action, 'store');
+  assert.deepEqual(decision.chord.notes, [60, 64, 67]);
+  assert.equal(decision.chord.label, 'C');
+  assert.notEqual(decision.chord, state.candidates[4]);
+});
+
+test('hold-right then step stores into empty and populated slots like Shift+Step', () => {
+  const state = createUiState();
+  const held = { ...chord, notes: [60, 64, 67], label: 'C' };
+  const last = { ...chord, tonicOffset: 2, notes: [62, 65, 69], label: 'Dm' };
+  pressCandidate(state, 1, held);
+  assignProgressionSlot(state, 3, { ...chord, tonicOffset: 7, quality: 'major' });
+
+  assert.equal(resolveStepPress(state, { slotIndex: 0 }).action, 'store');
+  assert.equal(resolveStepPress(state, { slotIndex: 0 }).chord.label, 'C');
+  assert.equal(resolveStepPress(state, { slotIndex: 3 }).action, 'store');
+  assert.equal(resolveStepPress(state, { slotIndex: 3 }).chord.label, 'C');
+
+  const shiftEmpty = resolveStepPress(state, { slotIndex: 0, shiftHeld: true, lastAuditioned: last });
+  const shiftPopulated = resolveStepPress(state, { slotIndex: 3, shiftHeld: true, lastAuditioned: last });
+  assert.equal(shiftEmpty.action, 'store');
+  assert.equal(shiftEmpty.chord.label, 'C');
+  assert.equal(shiftPopulated.action, 'store');
+  assert.equal(shiftPopulated.chord.label, 'C');
+});
+
+test('Shift+Step stores the last auditioned chord when no right pad is held', () => {
+  const state = createUiState();
+  const last = { ...chord, notes: [65, 69, 72], label: 'F' };
+
+  const stored = resolveStepPress(state, { slotIndex: 2, shiftHeld: true, lastAuditioned: last });
+  assert.equal(stored.action, 'store');
+  assert.equal(stored.chord, last);
+
+  const missing = resolveStepPress(state, { slotIndex: 2, shiftHeld: true });
+  assert.equal(missing.action, 'need-audition');
+});
+
+test('step without a held right pad still previews or gap-fills', () => {
+  const state = createUiState();
+  assignProgressionSlot(state, 1, chord);
+
+  const preview = resolveStepPress(state, { slotIndex: 1, lastAuditioned: { ...chord, label: 'ignored' } });
+  assert.equal(preview.action, 'preview');
+  assert.equal(preview.chord.tonicOffset, 0);
+  assert.equal('notes' in preview.chord, false);
+
+  const gap = resolveStepPress(state, { slotIndex: 2 });
+  assert.equal(gap.action, 'gap-fill');
+});
+
+test('Delete+Step clears even while a right pad is held', () => {
+  const state = createUiState();
+  pressCandidate(state, 0, { ...chord, notes: [60, 64, 67], label: 'C' });
+  assignProgressionSlot(state, 4, chord);
+
+  const held = resolveStepPress(state, { slotIndex: 4, deleteHeld: true });
+  const empty = resolveStepPress(state, { slotIndex: 0, deleteHeld: true, shiftHeld: true });
+  assert.equal(held.action, 'clear');
+  assert.equal(empty.action, 'clear');
+});
+
+test('left-pad revoice updates the held snapshot without storing a slot', () => {
+  const state = createUiState();
+  pressCandidate(state, 2, { ...chord, notes: [60, 64, 67], label: 'C' });
+  const candidates = Array(16).fill(null);
+  candidates[2] = { ...chord, tonicOffset: 7, notes: [67, 71, 74], label: 'G' };
+
+  revoiceHeldCandidates(state, candidates);
+  const decision = resolveStepPress(state, { slotIndex: 0 });
+
+  assert.deepEqual(state.progression, Array(8).fill(null));
+  assert.equal(decision.action, 'store');
+  assert.deepEqual(decision.chord.notes, [67, 71, 74]);
+  assert.equal(decision.chord.label, 'G');
+});
+
+test('a silent held pad does not store and falls back to an earlier sounding chord', () => {
+  const state = createUiState();
+  pressCandidate(state, 2, { ...chord, notes: [60, 64, 67], label: 'C' });
+  pressCandidate(state, 5, { ...chord, tonicOffset: 7, notes: [67, 71, 74], label: 'G' });
+  const candidates = Array(16).fill(null);
+  candidates[2] = { ...chord, notes: [60, 64, 67], label: 'C' };
+
+  revoiceHeldCandidates(state, candidates);
+
+  assert.equal(state.heldRight[5], true);
+  assert.equal(state.heldCandidates[5], null);
+  assert.equal(latestHeldCandidate(state).label, 'C');
+  assert.equal(resolveStepPress(state, { slotIndex: 0 }).chord.label, 'C');
+
+  revoiceHeldCandidates(state, Array(16).fill(null));
+  assert.equal(latestHeldCandidate(state), null);
+  assert.equal(resolveStepPress(state, { slotIndex: 0 }).action, 'ignore');
+  assert.equal(resolveStepPress(state, { slotIndex: 1, lastAuditioned: chord }).action, 'ignore');
+});
+
+test('stored slots keep semantic chord data rather than frozen MIDI notes', () => {
+  const state = createUiState();
+  const snapshot = pressCandidate(state, 3, {
+    ...chord,
+    notes: [60, 64, 67],
+    label: 'C',
+    score: 12,
+    registerShift: 1,
+  });
+  const decision = resolveStepPress(state, { slotIndex: 6 });
+  assignProgressionSlot(state, 6, decision.chord);
+
+  assert.equal(decision.chord, snapshot);
+  assert.deepEqual(state.progression[6], {
+    tonicOffset: 0,
+    scaleDegree: 0,
+    quality: 'major',
+    extensions: [],
+    inversion: 0,
+    spread: 0,
+    sourceClass: 'diatonic',
+    registerShift: 1,
+  });
+  assert.equal('notes' in state.progression[6], false);
+  assert.equal('label' in state.progression[6], false);
 });
 
 test('assigns and appends without overwriting a full progression', () => {

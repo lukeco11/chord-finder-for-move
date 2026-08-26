@@ -99,6 +99,7 @@ export function createUiState(settings = {}) {
     candidates: Array(16).fill(null),
     heldCandidates: Array(16).fill(null),
     heldRight: Array(16).fill(false),
+    heldRightOrder: [],
     captureIndex: 0,
     ledQueue: [],
   };
@@ -132,10 +133,24 @@ function snapshotCandidate(chord) {
   return snapshot;
 }
 
+function rememberHeldRight(state, index) {
+  const order = state.heldRightOrder;
+  const existing = order.indexOf(index);
+  if (existing >= 0) order.splice(existing, 1);
+  order.push(index);
+}
+
+function forgetHeldRight(state, index) {
+  const order = state.heldRightOrder;
+  const existing = order.indexOf(index);
+  if (existing >= 0) order.splice(existing, 1);
+}
+
 export function pressCandidate(state, index, chord) {
   const snapshot = snapshotCandidate(chord);
   state.heldCandidates[index] = snapshot;
   state.heldRight[index] = true;
+  rememberHeldRight(state, index);
   return snapshot;
 }
 
@@ -143,6 +158,7 @@ export function releaseCandidate(state, index) {
   const snapshot = state.heldCandidates[index];
   state.heldCandidates[index] = null;
   state.heldRight[index] = false;
+  forgetHeldRight(state, index);
   return snapshot;
 }
 
@@ -161,6 +177,38 @@ export function revoiceHeldCandidates(state, candidates) {
 export function clearHeldCandidates(state) {
   state.heldCandidates.fill(null);
   state.heldRight.fill(false);
+  state.heldRightOrder.length = 0;
+}
+
+export function latestHeldCandidate(state) {
+  const order = state.heldRightOrder || [];
+  for (let index = order.length - 1; index >= 0; index -= 1) {
+    const snapshot = state.heldCandidates[order[index]];
+    if (snapshot) return snapshot;
+  }
+  return null;
+}
+
+export function resolveStepPress(state, options = {}) {
+  if (options.deleteHeld) return { action: 'clear' };
+
+  const held = latestHeldCandidate(state);
+  if (options.shiftHeld) {
+    const chord = held || options.lastAuditioned || null;
+    if (chord) return { action: 'store', chord };
+    return { action: 'need-audition' };
+  }
+
+  if (held) return { action: 'store', chord: held };
+  if (state.heldRight.some(Boolean)) return { action: 'ignore' };
+
+  const slotIndex = Number(options.slotIndex);
+  if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= 8) {
+    return { action: 'ignore' };
+  }
+  const stored = state.progression[slotIndex];
+  if (stored) return { action: 'preview', chord: stored };
+  return { action: 'gap-fill' };
 }
 
 export function assignProgressionSlot(state, index, chord) {

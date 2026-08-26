@@ -21,8 +21,9 @@ import {
 import {
   appendProgressionChord, assignProgressionSlot, clearHeldCandidates, createUiState,
   leftPadIndex, migrateSettings, nextExplorationMode, pressCandidate,
-  progressionLength, progressionNeighbors, releaseCandidate, revoiceHeldCandidates,
-  rightPadIndex, PREVIEW_ROUTES, ROUTES, takeLedBatch, hostSupportsActiveMoveInject,
+  progressionLength, progressionNeighbors, releaseCandidate, resolveStepPress,
+  revoiceHeldCandidates, rightPadIndex, PREVIEW_ROUTES, ROUTES, takeLedBatch,
+  hostSupportsActiveMoveInject,
 } from './ui_state_v7.mjs';
 
 const SETTINGS_PATH = '/data/UserData/schwung/modules/tools/chord-finder/settings.json';
@@ -611,71 +612,69 @@ function handleRightPad(index, pressed, velocity) {
   }
 }
 
-function heldChord() {
-  for (let index = 0; index < state.heldCandidates.length; index += 1) {
-    if (state.heldCandidates[index]) return state.heldCandidates[index];
-  }
-  return null;
-}
-
 function handleStep(index, pressed, velocity) {
   if (index < 0 || index >= 8) return;
-  if (pressed) {
-    if (deleteHeld) {
-      storeChordAt(index, null);
-      announce('Slot ' + (index + 1) + ' cleared');
-      return;
-    }
-    const chord = heldChord();
-    const selected = chord || lastAuditioned;
-    if (shiftHeld && selected) {
-      storeChordAt(index, selected);
-      announce('Stored ' + selected.label + ' in slot ' + (index + 1));
-      return;
-    }
-    if (shiftHeld) {
-      showOverlay('AUDITION A CHORD FIRST');
-      announce('Audition a chord first');
-      return;
-    }
-    const stored = state.progression[index];
-    if (stored) {
-      const notes = slotNotes(stored);
-      playVoice(40 + index, notes, velocity);
-      lastAuditioned = { ...stored, notes, label: nameChord(stored, { key: state.settings.key, scaleId: state.settings.scaleId }) };
-      currentLabel = lastAuditioned.label;
-      currentCategory = 'PROGRESSION ' + (index + 1);
-      showDisplayVoice(40 + index, {
-        notes,
-        chord: semanticChord(lastAuditioned),
-        rootPitchClass: wrap(state.settings.key + lastAuditioned.tonicOffset, 12),
-        label: currentLabel,
-        category: currentCategory,
-      });
-      selectedSlot = index;
-      commitContext(lastAuditioned);
-      dirty = true;
-    } else {
-      selectedSlot = index;
-      state.settings.mode = 'next';
-      const neighbors = progressionNeighbors(state.progression, index);
-      currentChord = neighbors.previousChord ? semanticChord(neighbors.previousChord) : null;
-      currentNotes = currentChord ? slotNotes(currentChord) : [];
-      if (displayVoices.voices.size === 0) {
-        displayChord = null;
-        displayNotes = [];
-        displayRootPc = null;
-      }
-      currentLabel = `Fill step ${index + 1}`;
-      currentCategory = neighbors.nextChord ? 'BETWEEN CHORDS' : 'NEXT CHORD';
-      refreshCandidates();
-      scheduleSave();
-      showOverlay(`FILL STEP ${index + 1}`);
-      announce(`Choose a chord for slot ${index + 1}`);
-    }
-  } else {
+  if (!pressed) {
     stopVoice(40 + index);
+    return;
   }
+  const decision = resolveStepPress(state, {
+    slotIndex: index,
+    shiftHeld,
+    deleteHeld,
+    lastAuditioned,
+  });
+  if (decision.action === 'clear') {
+    storeChordAt(index, null);
+    announce('Slot ' + (index + 1) + ' cleared');
+    return;
+  }
+  if (decision.action === 'store') {
+    storeChordAt(index, decision.chord);
+    announce('Stored ' + decision.chord.label + ' in slot ' + (index + 1));
+    return;
+  }
+  if (decision.action === 'need-audition') {
+    showOverlay('AUDITION A CHORD FIRST');
+    announce('Audition a chord first');
+    return;
+  }
+  if (decision.action === 'preview') {
+    const stored = decision.chord;
+    const notes = slotNotes(stored);
+    playVoice(40 + index, notes, velocity);
+    lastAuditioned = { ...stored, notes, label: nameChord(stored, { key: state.settings.key, scaleId: state.settings.scaleId }) };
+    currentLabel = lastAuditioned.label;
+    currentCategory = 'PROGRESSION ' + (index + 1);
+    showDisplayVoice(40 + index, {
+      notes,
+      chord: semanticChord(lastAuditioned),
+      rootPitchClass: wrap(state.settings.key + lastAuditioned.tonicOffset, 12),
+      label: currentLabel,
+      category: currentCategory,
+    });
+    selectedSlot = index;
+    commitContext(lastAuditioned);
+    dirty = true;
+    return;
+  }
+  if (decision.action !== 'gap-fill') return;
+  selectedSlot = index;
+  state.settings.mode = 'next';
+  const neighbors = progressionNeighbors(state.progression, index);
+  currentChord = neighbors.previousChord ? semanticChord(neighbors.previousChord) : null;
+  currentNotes = currentChord ? slotNotes(currentChord) : [];
+  if (displayVoices.voices.size === 0) {
+    displayChord = null;
+    displayNotes = [];
+    displayRootPc = null;
+  }
+  currentLabel = `Fill step ${index + 1}`;
+  currentCategory = neighbors.nextChord ? 'BETWEEN CHORDS' : 'NEXT CHORD';
+  refreshCandidates();
+  scheduleSave();
+  showOverlay(`FILL STEP ${index + 1}`);
+  announce(`Choose a chord for slot ${index + 1}`);
 }
 
 function updateCandidatesAndSlots(transposeSlots) {

@@ -75,8 +75,21 @@ test('bass, root, and top markers use distinct key-relative positions', () => {
   assert.match(source, /marker\.position === 'center'[\s\S]{0,120}Math\.floor\(key\.width \/ 2\)[\s\S]{0,160}marker\.position === 'right'[\s\S]{0,120}key\.width/);
 });
 
-test('played roots refresh candidates before revoicing held right pads', () => {
-  assert.match(source, /function handleLeftPad\(index, pressed, velocity\)[\s\S]{0,900}refreshCandidates\(\);\s*revoiceHeldRightPads\(\);/);
+test('step presses store a held right snapshot without requiring Shift', () => {
+  assert.match(source, /releaseCandidate, resolveStepPress,/);
+  const stepBody = source.match(/function handleStep\(index, pressed, velocity\) \{([\s\S]*?)\n\}/)?.[1] ?? '';
+  assert.match(stepBody, /resolveStepPress\(state, \{[\s\S]*?slotIndex: index[\s\S]*?shiftHeld[\s\S]*?deleteHeld[\s\S]*?lastAuditioned/);
+  assert.match(stepBody, /decision\.action === 'store'[\s\S]*?storeChordAt\(index, decision\.chord\)/);
+  assert.match(stepBody, /decision\.action === 'clear'[\s\S]*?storeChordAt\(index, null\)/);
+  assert.match(stepBody, /decision\.action === 'preview'/);
+  assert.match(stepBody, /decision\.action !== 'gap-fill'/);
+  assert.doesNotMatch(stepBody, /shiftHeld && selected/);
+});
+
+test('left-pad revoice stays separate from step store gestures', () => {
+  const leftBody = source.match(/function handleLeftPad\(index, pressed, velocity\) \{([\s\S]*?)\n\}/)?.[1] ?? '';
+  assert.match(leftBody, /refreshCandidates\(\);\s*revoiceHeldRightPads\(\);/);
+  assert.doesNotMatch(leftBody, /resolveStepPress|storeChordAt|handleStep/);
   const updateBody = source.match(/function updateCandidatesAndSlots\(transposeSlots\) \{([\s\S]*?)\n\}/)?.[1] || '';
   assert.doesNotMatch(updateBody, /revoiceHeldRightPads/);
 });
