@@ -263,3 +263,94 @@ export function nextExplorationMode(mode) {
 export function takeLedBatch(queue, maximum = 8) {
   return queue.splice(0, maximum);
 }
+
+export const ENCODER_DETENT_GEAR = 2;
+export const OVERLAY_TICKS = 150;
+export const IMPRESSIVE_CHORDS_PRESETS_DIR = '/data/UserData/schwung/modules/midi_fx/impressive-chords/presets';
+export const CHORD_FINDER_EXPORTS_DIR = '/data/UserData/schwung/modules/tools/chord-finder/exports';
+
+export function encoderDetent(accumulator, delta, gear = ENCODER_DETENT_GEAR) {
+  if (!delta) return { accumulator, step: 0 };
+  let next = accumulator + delta;
+  if (Math.abs(next) < gear) return { accumulator: next, step: 0 };
+  const step = next > 0 ? 1 : -1;
+  next -= step * gear;
+  return { accumulator: next, step };
+}
+
+export function packedProgressionChords(progression, notesFor) {
+  const chords = [];
+  if (!Array.isArray(progression) || typeof notesFor !== 'function') return chords;
+  for (let slot = 0; slot < progression.length; slot += 1) {
+    if (!progression[slot]) continue;
+    const raw = notesFor(progression[slot], slot);
+    const notes = (Array.isArray(raw) ? raw : [])
+      .filter((note) => Number.isInteger(note) && note >= 0 && note <= 127);
+    if (!notes.length) continue;
+    chords.push({ index: chords.length, notes });
+  }
+  return chords;
+}
+
+export function formatImpressiveChordsFile(name, chords) {
+  const lines = [`Name: ${name || 'Chord Finder'}`];
+  for (const chord of chords || []) {
+    lines.push(`${chord.index}: ${chord.notes.join(',')}`);
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+function variableLength(value) {
+  const bytes = [value & 0x7f];
+  let remaining = value >>> 7;
+  while (remaining > 0) {
+    bytes.unshift((remaining & 0x7f) | 0x80);
+    remaining >>>= 7;
+  }
+  return bytes;
+}
+
+export function formatMidiFile(chords, options = {}) {
+  const ticksPerBeat = Number.isFinite(options.ticksPerBeat) ? options.ticksPerBeat : 96;
+  const beatsPerChord = Number.isFinite(options.beatsPerChord) ? options.beatsPerChord : 1;
+  const gate = Number.isFinite(options.gate) ? Math.max(10, Math.min(100, options.gate)) : 85;
+  const span = Math.max(1, ticksPerBeat * beatsPerChord);
+  const noteLen = Math.max(1, Math.round(span * gate / 100));
+  const rest = Math.max(0, span - noteLen);
+  const track = [];
+  const pushDelta = (delta) => {
+    track.push(...variableLength(delta));
+  };
+  let pending = 0;
+  for (const chord of chords || []) {
+    if (!chord.notes || !chord.notes.length) continue;
+    chord.notes.forEach((note, index) => {
+      pushDelta(index === 0 ? pending : 0);
+      track.push(0x90, note & 0x7f, 100);
+      pending = 0;
+    });
+    chord.notes.forEach((note, index) => {
+      pushDelta(index === 0 ? noteLen : 0);
+      track.push(0x80, note & 0x7f, 0);
+    });
+    pending = rest;
+  }
+  pushDelta(pending);
+  track.push(0xff, 0x2f, 0x00);
+  return Uint8Array.from([
+    0x4d, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06,
+    0x00, 0x00, 0x00, 0x01, (ticksPerBeat >> 8) & 0xff, ticksPerBeat & 0xff,
+    0x4d, 0x54, 0x72, 0x6b,
+    (track.length >> 24) & 0xff, (track.length >> 16) & 0xff,
+    (track.length >> 8) & 0xff, track.length & 0xff,
+    ...track,
+  ]);
+}
+
+export function bytesToHostString(bytes) {
+  let text = '';
+  for (let index = 0; index < bytes.length; index += 1) {
+    text += String.fromCharCode(bytes[index]);
+  }
+  return text;
+}

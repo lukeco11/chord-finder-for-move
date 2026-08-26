@@ -88,7 +88,11 @@ For a Move instrument:
 For an external instrument, connect it to Move's USB-A port, set **Preview
 Route** to `USB-A`, and match the MIDI channels. Choose `BOTH` to send the same
 notes to both destinations. The **Test Output** item in Menu plays a short test
-chord and is useful when checking routing.
+chord and is useful when checking routing. **Export Chords** writes the saved
+progression as a `.chords` preset into
+[Impressive Chords](https://github.com/mestela/schwung-impressive-chords)'
+preset folder, and also saves a `.mid` file in Chord Finder's `exports`
+folder. In Impressive Chords, turn **Scan Presets** to load the new preset.
 
 To audition through a synth loaded in Schwung's signal chain, set **Preview
 Route** to `SCHWUNG` and match the Chord Finder MIDI channel to the chain
@@ -164,7 +168,7 @@ key or octave transposes the saved progression.
 | Play | Arm the progression and start or stop Move transport |
 | Back | Park Chord Finder while its armed progression follows Move |
 | Shift + Back | Fully exit, disarm, and stop Chord Finder |
-| Menu | MIDI channel, output routes, gate, and output test |
+| Menu | MIDI channel, output routes, gate, output test, and Impressive Chords export |
 
 ## Record MIDI in a DAW
 

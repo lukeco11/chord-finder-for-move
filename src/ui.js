@@ -19,11 +19,13 @@ import {
   stopDisplayVoice,
 } from './keyboard_v2.mjs';
 import {
-  appendProgressionChord, assignProgressionSlot, clearHeldCandidates, createUiState,
-  leftPadIndex, migrateSettings, nextExplorationMode, pressCandidate,
-  progressionLength, progressionNeighbors, releaseCandidate, resolveStepPress,
-  revoiceHeldCandidates, rightPadIndex, PREVIEW_ROUTES, ROUTES, takeLedBatch,
-  hostSupportsActiveMoveInject,
+  appendProgressionChord, assignProgressionSlot, bytesToHostString, clearHeldCandidates,
+  createUiState, encoderDetent, formatImpressiveChordsFile, formatMidiFile,
+  leftPadIndex, migrateSettings, nextExplorationMode, packedProgressionChords,
+  pressCandidate, progressionLength, progressionNeighbors, releaseCandidate,
+  resolveStepPress, revoiceHeldCandidates, rightPadIndex, PREVIEW_ROUTES, ROUTES, takeLedBatch,
+  hostSupportsActiveMoveInject, CHORD_FINDER_EXPORTS_DIR,
+  ENCODER_DETENT_GEAR, IMPRESSIVE_CHORDS_PRESETS_DIR, OVERLAY_TICKS,
 } from './ui_state_v7.mjs';
 
 const SETTINGS_PATH = '/data/UserData/schwung/modules/tools/chord-finder/settings.json';
@@ -34,7 +36,7 @@ const RATE_LABELS = ['1/16', '1/8', '1/4', '1/2', '1 BAR'];
 const RATE_SHORT_LABELS = ['16', '8', '4', '2', '1B'];
 const DIATONIC_COLORS = [BrightGreen, ForestGreen, DullGreen];
 const COLOR_COLORS = [VividYellow, Ochre, BurntOrange];
-const MENU_ITEMS = ['MIDI CHANNEL', 'OUTPUT ROUTE', 'PREVIEW ROUTE', 'GLOBAL GATE', 'TEST OUTPUT'];
+const MENU_ITEMS = ['MIDI CHANNEL', 'OUTPUT ROUTE', 'PREVIEW ROUTE', 'GLOBAL GATE', 'TEST OUTPUT', 'EXPORT CHORDS'];
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 const MODE_LABELS = { root: 'ROOT', next: 'NEXT', voice: 'VOICE' };
 const PARAMETER_LABELS = ['KEY', 'SCALE', 'COLOR', 'EXT', 'INV', 'SPREAD', 'STRUM', 'STEP'];
@@ -73,6 +75,7 @@ let pollCountdown = 1;
 let dirty = true;
 let heldLeft = Array(16).fill(false);
 let heldRightVelocity = Array(16).fill(100);
+let encoderAccum = Array(8).fill(0);
 let commandSequence = 0;
 let commandQueue = [];
 let liveOwners = new Set();
@@ -182,12 +185,58 @@ function scheduleSave() {
 }
 
 function saveSettings() {
-  if (typeof host_write_file !== 'function') return;
-  if (host_write_file(SETTINGS_PATH, JSON.stringify(clonePersistedSettings())) === true) {
+  if (writeHostFile(SETTINGS_PATH, JSON.stringify(clonePersistedSettings()))) {
     saveCountdown = -1;
   } else {
     saveCountdown = 90;
   }
+}
+
+function writeHostFile(path, content) {
+  return typeof host_write_file === 'function' && host_write_file(path, content) === true;
+}
+
+function impressiveChordsAvailable() {
+  if (typeof host_get_module_metadata === 'function' && host_get_module_metadata('impressive-chords')) {
+    return true;
+  }
+  return typeof host_file_exists === 'function'
+    && host_file_exists('/data/UserData/schwung/modules/midi_fx/impressive-chords') === true;
+}
+
+function exportProgression() {
+  const chords = packedProgressionChords(state.progression, (chord) => slotNotes(chord));
+  if (!chords.length) {
+    showOverlay('NO CHORDS TO EXPORT');
+    announce('No chords to export');
+    return;
+  }
+  const label = `Chord Finder ${KEY_NAMES[state.settings.key]} ${getScale(state.settings.scaleId).name}`;
+  const chordsText = formatImpressiveChordsFile(label, chords);
+  const midiBytes = formatMidiFile(chords, { gate: state.settings.gate, beatsPerChord: 1 });
+  let chordsWritten = false;
+  let midiWritten = false;
+
+  if (impressiveChordsAvailable()) {
+    if (typeof host_ensure_dir === 'function') host_ensure_dir(IMPRESSIVE_CHORDS_PRESETS_DIR);
+    chordsWritten = writeHostFile(`${IMPRESSIVE_CHORDS_PRESETS_DIR}/chord_finder.chords`, chordsText);
+  }
+  if (typeof host_ensure_dir === 'function') host_ensure_dir(CHORD_FINDER_EXPORTS_DIR);
+  midiWritten = writeHostFile(`${CHORD_FINDER_EXPORTS_DIR}/chord_finder.mid`, bytesToHostString(midiBytes));
+  writeHostFile(`${CHORD_FINDER_EXPORTS_DIR}/chord_finder.chords`, chordsText);
+
+  if (chordsWritten) {
+    showOverlay(`EXPORTED ${chords.length} CHORDS`);
+    announce(`Exported ${chords.length} chords to Impressive Chords`);
+    return;
+  }
+  if (midiWritten) {
+    showOverlay('SAVED MIDI EXPORT');
+    announce('Impressive Chords is not installed. Saved a MIDI export.');
+    return;
+  }
+  showOverlay(impressiveChordsAvailable() ? 'EXPORT FAILED' : 'INSTALL IMPRESSIVE CHORDS');
+  announce(impressiveChordsAvailable() ? 'Export failed' : 'Install Impressive Chords to export a preset');
 }
 
 function loadSettings() {
@@ -226,7 +275,7 @@ function candidateSettings() {
   };
 }
 
-function showOverlay(text, ticks = 75) {
+function showOverlay(text, ticks = OVERLAY_TICKS) {
   overlayText = text;
   overlayCountdown = ticks;
   dirty = true;
@@ -309,12 +358,12 @@ function drawMenu() {
   print(0, 0, 'Chord Finder', 1);
   print(80, 0, 'SETTINGS', 1);
   for (let index = 0; index < MENU_ITEMS.length; index += 1) {
-    const y = 13 + index * 9;
+    const y = 10 + index * 8;
     if (index === menuCursor) fill_rect(0, y - 1, 128, 9, 1);
     print(2, y, truncate(MENU_ITEMS[index], 14), index === menuCursor ? 0 : 1);
     print(91, y, truncate(menuValue(index), 6), index === menuCursor ? 0 : 1);
   }
-  print(0, 58, menuEditing ? 'Turn jog  Click done' : 'Jog + click', 1);
+  print(0, 61, menuEditing ? 'Turn jog  Click done' : 'Jog + click', 1);
 }
 
 function romanNumeral(chord) {
@@ -686,25 +735,27 @@ function updateCandidatesAndSlots(transposeSlots) {
 
 function updateEncoder(index, rawValue) {
   const delta = decodeDelta(rawValue);
-  if (!delta) return;
+  const geared = encoderDetent(encoderAccum[index], delta, ENCODER_DETENT_GEAR);
+  encoderAccum[index] = geared.accumulator;
+  if (!geared.step) return;
   const settings = state.settings;
   const before = [settings.key, settings.scaleId, settings.colorDepth,
     settings.extensionBias, settings.inversionBias, settings.spread,
     settings.strumMs, settings.rate][index];
   if (index === 0) {
-    settings.key = wrap(settings.key + delta, 12);
+    settings.key = wrap(settings.key + geared.step, 12);
     if (settings.mode === 'root') focusPc = settings.key;
   }
   if (index === 1) {
     const scaleIndex = SCALES.findIndex((scale) => scale.id === settings.scaleId);
-    settings.scaleId = SCALES[wrap(scaleIndex + delta, SCALES.length)].id;
+    settings.scaleId = SCALES[wrap(scaleIndex + geared.step, SCALES.length)].id;
   }
-  if (index === 2) settings.colorDepth = clamp(settings.colorDepth + delta, 0, 2);
-  if (index === 3) settings.extensionBias = clamp(settings.extensionBias + delta, 0, 2);
-  if (index === 4) settings.inversionBias = clamp(settings.inversionBias + delta, 0, 3);
-  if (index === 5) settings.spread = clamp(settings.spread + delta, 0, 2);
-  if (index === 6) settings.strumMs = clamp(settings.strumMs + delta * 5, 0, 100);
-  if (index === 7) settings.rate = clamp(settings.rate + delta, 0, 4);
+  if (index === 2) settings.colorDepth = clamp(settings.colorDepth + geared.step, 0, 2);
+  if (index === 3) settings.extensionBias = clamp(settings.extensionBias + geared.step, 0, 2);
+  if (index === 4) settings.inversionBias = clamp(settings.inversionBias + geared.step, 0, 3);
+  if (index === 5) settings.spread = clamp(settings.spread + geared.step, 0, 2);
+  if (index === 6) settings.strumMs = clamp(settings.strumMs + geared.step * 5, 0, 100);
+  if (index === 7) settings.rate = clamp(settings.rate + geared.step, 0, 4);
   const after = [settings.key, settings.scaleId, settings.colorDepth,
     settings.extensionBias, settings.inversionBias, settings.spread,
     settings.strumMs, settings.rate][index];
@@ -871,6 +922,7 @@ globalThis.init = function init() {
   saveCountdown = -1;
   heldLeft = Array(16).fill(false);
   heldRightVelocity = Array(16).fill(100);
+  encoderAccum = Array(8).fill(0);
   commandSequence = 0;
   commandQueue = [];
   liveOwners = new Set();
@@ -991,6 +1043,10 @@ globalThis.onMidiMessageInternal = function onMidiMessageInternal(data) {
       } else {
         announce(`Testing ${ROUTE_LABELS[state.settings.previewRoute]} channel ${state.settings.channel + 1}`);
       }
+      return;
+    }
+    if (menuCursor === 5) {
+      exportProgression();
       return;
     }
     menuEditing = !menuEditing;

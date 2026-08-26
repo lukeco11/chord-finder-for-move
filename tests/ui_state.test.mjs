@@ -4,12 +4,18 @@ import assert from 'node:assert/strict';
 import {
   appendProgressionChord,
   assignProgressionSlot,
+  bytesToHostString,
   clearHeldCandidates,
   createUiState,
+  encoderDetent,
+  ENCODER_DETENT_GEAR,
+  formatImpressiveChordsFile,
+  formatMidiFile,
   latestHeldCandidate,
   leftPadIndex,
   migrateSettings,
   nextExplorationMode,
+  packedProgressionChords,
   pressCandidate,
   progressionLength,
   progressionNeighbors,
@@ -340,4 +346,51 @@ test('drains no more than eight LED updates per tick', () => {
   assert.equal(queue.length, 12);
   assert.equal(takeLedBatch(queue).length, 8);
   assert.equal(takeLedBatch(queue).length, 4);
+});
+
+test('encoder detents require two ticks before a parameter steps', () => {
+  assert.equal(ENCODER_DETENT_GEAR, 2);
+  assert.deepEqual(encoderDetent(0, 1), { accumulator: 1, step: 0 });
+  assert.deepEqual(encoderDetent(1, 1), { accumulator: 0, step: 1 });
+  assert.deepEqual(encoderDetent(0, -1), { accumulator: -1, step: 0 });
+  assert.deepEqual(encoderDetent(-1, -1), { accumulator: 0, step: -1 });
+  assert.deepEqual(encoderDetent(0, 0), { accumulator: 0, step: 0 });
+});
+
+test('packs populated progression slots into an Impressive Chords preset file', () => {
+  const progression = Array(8).fill(null);
+  progression[1] = { ...chord, tonicOffset: 0 };
+  progression[4] = { ...chord, tonicOffset: 7 };
+  const packed = packedProgressionChords(progression, (item) => (
+    item.tonicOffset === 0 ? [60, 64, 67] : [67, 71, 74]
+  ));
+
+  assert.deepEqual(packed, [
+    { index: 0, notes: [60, 64, 67] },
+    { index: 1, notes: [67, 71, 74] },
+  ]);
+  assert.equal(
+    formatImpressiveChordsFile('Chord Finder C Major', packed),
+    'Name: Chord Finder C Major\n0: 60,64,67\n1: 67,71,74\n',
+  );
+});
+
+test('MIDI export writes a type 0 file with one event block per packed chord', () => {
+  const packed = [
+    { index: 0, notes: [60, 64, 67] },
+    { index: 1, notes: [65, 69, 72] },
+  ];
+  const bytes = formatMidiFile(packed, { ticksPerBeat: 96, beatsPerChord: 1, gate: 50 });
+  const text = bytesToHostString(bytes);
+
+  assert.equal(text.slice(0, 4), 'MThd');
+  assert.equal(text.slice(14, 18), 'MTrk');
+  assert.equal(bytes[8], 0x00);
+  assert.equal(bytes[9], 0x00);
+  assert.equal(bytes.includes(0x90), true);
+  assert.equal(bytes.includes(60), true);
+  assert.equal(bytes.includes(65), true);
+  assert.equal(bytes[bytes.length - 3], 0xff);
+  assert.equal(bytes[bytes.length - 2], 0x2f);
+  assert.equal(bytes[bytes.length - 1], 0x00);
 });

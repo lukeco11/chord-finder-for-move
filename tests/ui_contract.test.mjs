@@ -76,7 +76,7 @@ test('bass, root, and top markers use distinct key-relative positions', () => {
 });
 
 test('step presses store a held right snapshot without requiring Shift', () => {
-  assert.match(source, /releaseCandidate, resolveStepPress,/);
+  assert.match(source, /releaseCandidate,\s*resolveStepPress/);
   const stepBody = source.match(/function handleStep\(index, pressed, velocity\) \{([\s\S]*?)\n\}/)?.[1] ?? '';
   assert.match(stepBody, /resolveStepPress\(state, \{[\s\S]*?slotIndex: index[\s\S]*?shiftHeld[\s\S]*?deleteHeld[\s\S]*?lastAuditioned/);
   assert.match(stepBody, /decision\.action === 'store'[\s\S]*?storeChordAt\(index, decision\.chord\)/);
@@ -128,4 +128,18 @@ test('all sounding piano keys fill solid while idle black keys remain outlined',
 test('DSP configuration reports whether active native injection is supported', () => {
   assert.match(source, /hostSupportsActiveMoveInject\(globalThis\)/);
   assert.match(source, /function configureDsp\(\)[\s\S]{0,300}move_available: moveAvailable \? 1 : 0/);
+});
+
+test('parameter overlays stay visible longer and knobs require encoder detents', () => {
+  assert.match(source, /function showOverlay\(text, ticks = OVERLAY_TICKS\)/);
+  assert.match(source, /encoderDetent\(encoderAccum\[index\], delta, ENCODER_DETENT_GEAR\)/);
+  assert.doesNotMatch(source, /function showOverlay\(text, ticks = 75\)/);
+});
+
+test('menu export writes Impressive Chords presets without replacing TEST OUTPUT', () => {
+  assert.match(source, /'TEST OUTPUT', 'EXPORT CHORDS'/);
+  assert.match(source, /menuCursor === 4[\s\S]{0,80}op: 'output_test'/);
+  assert.match(source, /menuCursor === 5[\s\S]{0,80}exportProgression\(\)/);
+  assert.match(source, /IMPRESSIVE_CHORDS_PRESETS_DIR\}\/chord_finder\.chords/);
+  assert.match(source, /CHORD_FINDER_EXPORTS_DIR\}\/chord_finder\.mid/);
 });

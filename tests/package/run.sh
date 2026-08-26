@@ -18,7 +18,7 @@ node -e '
   if (!manifest.capabilities || manifest.capabilities.suspend_keeps_js !== true) throw new Error("must suspend with JS");
   if (!manifest.capabilities.button_passthrough.includes(85) || !manifest.capabilities.button_passthrough.includes(86)) throw new Error("transport passthrough missing");
   const helpText = help.children.flatMap(section => section.lines).join(" ");
-  for (const phrase of ["ROOT, NEXT, VOICE", "Shift + Step", "Hold right + Step", "TEST OUTPUT", "Shift + left pad", "Hold a right chord", "next slot"]) {
+  for (const phrase of ["ROOT, NEXT, VOICE", "Shift + Step", "Hold right + Step", "TEST OUTPUT", "EXPORT CHORDS", "Impressive Chords", "Shift + left pad", "Hold a right chord", "next slot"]) {
     if (!helpText.includes(phrase)) throw new Error(`help missing ${phrase}`);
   }
 '
