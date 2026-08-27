@@ -13,6 +13,26 @@ Chord Finder is an independent module for
 [Schwung](https://github.com/charlesvestal/schwung). It is not made or
 supported by Ableton.
 
+## What's new in 0.5.0
+
+- **Theory view.** Hold Shift and click the main jog wheel to swap the piano
+  for a theory card: the chord's spelled tones, its interval construction,
+  its harmonic function and resolution tendency, and your eight progression
+  slots as roman numerals with the playing step highlighted.
+- **Roman numerals everywhere.** The chord line now shows the current chord's
+  roman numeral in the key, including secondary dominants (`V/IV`) and
+  borrowed chords (`bVII`).
+- **Export Chords.** The Menu can export the stored progression as an
+  [Impressive Chords](https://github.com/mestela/schwung-impressive-chords)
+  preset and a standard MIDI file. Every export gets its own preset named
+  after the key and scale, so exports accumulate and stay selectable.
+- **Store chords with one hand.** Hold a right-pad chord and press a Step
+  button to store it, in addition to Shift + Step.
+- **Calmer controls.** Parameter knobs need two encoder ticks per step, and
+  parameter overlays stay on screen twice as long.
+- **Exports survive updates.** The module's `exports` folder is preserved
+  when Chord Finder is updated.
+
 ## Who it is for
 
 Chord Finder is useful if you:
@@ -178,7 +198,7 @@ key or octave transposes the saved progression.
 
 | Control | What it does |
 | --- | --- |
-| Encoders 1-8 | Key, Scale, Color, Extension, Inversion, Spread, Strum, Rate |
+| Encoders 1-8 | Key, Scale, Color, Extension, Inversion, Spread, Strum, Rate (two ticks per step) |
 | Up / Down | Move the playable range by octaves |
 | Main jog click | Cycle ROOT, NEXT, and VOICE modes |
 | Shift + jog click | Toggle the Theory view (chord tones, intervals, function, progression numerals) |
