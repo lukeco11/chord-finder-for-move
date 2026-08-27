@@ -22,6 +22,7 @@ import {
   appendProgressionChord, assignProgressionSlot, clearHeldCandidates,
   createUiState, encoderDetent, formatImpressiveChordsFile, formatImpressiveChordsJson,
   formatMidiFile, leftPadIndex, midiWriteCommand, migrateSettings, nextExplorationMode,
+  nextExportName,
   packedProgressionChords, pressCandidate, progressionLength, progressionNeighbors,
   releaseCandidate, resolveStepPress, revoiceHeldCandidates, rightPadIndex,
   PREVIEW_ROUTES, ROUTES, takeLedBatch, hostSupportsActiveMoveInject,
@@ -211,10 +212,10 @@ function hostFileExists(path) {
   return typeof host_file_exists === 'function' && host_file_exists(path) === true;
 }
 
-function writeMidiExport(midiBytes) {
+function writeMidiExport(filename, midiBytes) {
   if (typeof host_system_cmd !== 'function') return false;
   ensureHostDir(CHORD_FINDER_EXPORTS_DIR);
-  const command = midiWriteCommand(`${CHORD_FINDER_EXPORTS_DIR}/chord_finder.mid`, midiBytes);
+  const command = midiWriteCommand(`${CHORD_FINDER_EXPORTS_DIR}/${filename}`, midiBytes);
   return host_system_cmd(command) === 0;
 }
 
@@ -232,24 +233,30 @@ function exportProgression() {
     closeMenuWithOverlay('NO CHORDS TO EXPORT', 'Store chords in steps first, then export');
     return;
   }
-  const chordsText = formatImpressiveChordsFile('Chord Finder', chords);
+  const names = nextExportName(
+    KEY_NAMES[state.settings.key],
+    getScale(state.settings.scaleId).name,
+    (base) => hostFileExists(`${IMPRESSIVE_CHORDS_PRESETS_DIR}/${base}.chords`)
+      || hostFileExists(`${CHORD_FINDER_EXPORTS_DIR}/${base}.chords`),
+  );
+  const chordsText = formatImpressiveChordsFile(names.label, chords);
   const chordsJson = formatImpressiveChordsJson(chords);
   const midiBytes = formatMidiFile(chords, { gate: state.settings.gate, beatsPerChord: 1 });
   const icInstalled = hostFileExists(`${IMPRESSIVE_CHORDS_DIR}/module.json`);
   const wrotePreset = icInstalled
-    && writeChordsToDir(IMPRESSIVE_CHORDS_PRESETS_DIR, 'chord_finder.chords', chordsText);
-  if (wrotePreset) writeChordsToDir(IMPRESSIVE_CHORDS_SOURCES_DIR, 'chord_finder.json', chordsJson);
-  const wroteLocal = writeChordsToDir(CHORD_FINDER_EXPORTS_DIR, 'chord_finder.chords', chordsText);
-  const wroteMidi = writeMidiExport(midiBytes);
+    && writeChordsToDir(IMPRESSIVE_CHORDS_PRESETS_DIR, `${names.base}.chords`, chordsText);
+  if (wrotePreset) writeChordsToDir(IMPRESSIVE_CHORDS_SOURCES_DIR, `${names.base}.json`, chordsJson);
+  const wroteLocal = writeChordsToDir(CHORD_FINDER_EXPORTS_DIR, `${names.base}.chords`, chordsText);
+  const wroteMidi = writeMidiExport(`${names.base}.mid`, midiBytes);
   const midiSpoken = wroteMidi
-    ? 'The MIDI file chord_finder.mid is in the chord-finder exports folder.'
+    ? `The MIDI file ${names.base}.mid is in the chord-finder exports folder.`
     : 'The MIDI file could not be written.';
 
   if (wrotePreset) {
     exportStatus = 'SAVED';
     closeMenuWithOverlay(
       'EXPORTED-SCAN PRESETS',
-      `Exported ${chords.length} chords as the Impressive Chords preset named Chord Finder. Turn Scan Presets on in Impressive Chords to load it. ${midiSpoken}`,
+      `Exported ${chords.length} chords as the Impressive Chords preset named ${names.label}. Turn Scan Presets on in Impressive Chords to load it. ${midiSpoken}`,
     );
     return;
   }
@@ -258,8 +265,8 @@ function exportProgression() {
     closeMenuWithOverlay(
       icInstalled ? 'IC WRITE FAILED' : 'NO IMPRESSIVE CHORDS',
       icInstalled
-        ? `The Impressive Chords preset folder was not writable. Saved chord_finder.chords in the chord-finder exports folder instead. ${midiSpoken}`
-        : `Impressive Chords is not installed. Saved chord_finder.chords in the chord-finder exports folder. ${midiSpoken}`,
+        ? `The Impressive Chords preset folder was not writable. Saved ${names.base}.chords in the chord-finder exports folder instead. ${midiSpoken}`
+        : `Impressive Chords is not installed. Saved ${names.base}.chords in the chord-finder exports folder. ${midiSpoken}`,
     );
     return;
   }

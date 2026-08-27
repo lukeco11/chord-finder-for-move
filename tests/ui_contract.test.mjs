@@ -141,14 +141,15 @@ test('menu export writes Impressive Chords presets without replacing TEST OUTPUT
   assert.match(source, /'TEST OUTPUT', 'EXPORT CHORDS'/);
   assert.match(source, /menuCursor === 4[\s\S]{0,80}op: 'output_test'/);
   assert.match(source, /menuCursor === 5[\s\S]{0,80}exportProgression\(\)/);
-  assert.match(source, /writeChordsToDir\(IMPRESSIVE_CHORDS_PRESETS_DIR, 'chord_finder\.chords'/);
-  assert.match(source, /writeChordsToDir\(IMPRESSIVE_CHORDS_SOURCES_DIR, 'chord_finder\.json'/);
+  assert.match(source, /writeChordsToDir\(IMPRESSIVE_CHORDS_PRESETS_DIR, `\$\{names\.base\}\.chords`/);
+  assert.match(source, /writeChordsToDir\(IMPRESSIVE_CHORDS_SOURCES_DIR, `\$\{names\.base\}\.json`/);
 });
 
-test('export detects Impressive Chords and keeps one stable preset name', () => {
+test('export detects Impressive Chords and names each export uniquely', () => {
   assert.match(source, /host_file_exists/);
   assert.match(source, /`\$\{IMPRESSIVE_CHORDS_DIR\}\/module\.json`/);
-  assert.match(source, /formatImpressiveChordsFile\('Chord Finder',/);
+  assert.match(source, /nextExportName\(/);
+  assert.match(source, /formatImpressiveChordsFile\(names\.label,/);
   assert.doesNotMatch(source, /IMPRESSIVE_CHORDS_PRESETS_CHORDS_DIR/);
   assert.doesNotMatch(source, /writeChordsToDir\(CHORD_FINDER_DIR,/);
 });

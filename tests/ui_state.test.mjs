@@ -14,6 +14,7 @@ import {
   latestHeldCandidate,
   leftPadIndex,
   midiWriteCommand,
+  nextExportName,
   migrateSettings,
   nextExplorationMode,
   packedProgressionChords,
@@ -398,6 +399,25 @@ test('MIDI export writes a type 0 file with one event block per packed chord', (
   assert.equal(bytes[bytes.length - 3], 0xff);
   assert.equal(bytes[bytes.length - 2], 0x2f);
   assert.equal(bytes[bytes.length - 1], 0x00);
+});
+
+test('each export gets a unique name that survives an Impressive Chords rescan', () => {
+  // Impressive Chords regenerates preset names from the source filename via
+  // Python str.title(), so label must equal title-cased base.
+  assert.deepEqual(nextExportName('A', 'Lydian', () => false), {
+    base: 'chord_finder_a_lydian',
+    label: 'Chord Finder A Lydian',
+  });
+  assert.deepEqual(nextExportName('Db', 'Natural Minor', () => false), {
+    base: 'chord_finder_db_natural_minor',
+    label: 'Chord Finder Db Natural Minor',
+  });
+
+  const taken = new Set(['chord_finder_a_lydian', 'chord_finder_a_lydian_2']);
+  assert.deepEqual(nextExportName('A', 'Lydian', (base) => taken.has(base)), {
+    base: 'chord_finder_a_lydian_3',
+    label: 'Chord Finder A Lydian 3',
+  });
 });
 
 test('MIDI write command carries exact bytes through allowlisted sh printf', () => {

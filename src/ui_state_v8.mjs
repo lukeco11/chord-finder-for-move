@@ -358,6 +358,23 @@ export function formatMidiFile(chords, options = {}) {
   ]);
 }
 
+/* Impressive Chords regenerates a preset's display name from its source
+ * filename with Python str.title(), so the label must be exactly the
+ * title-cased base name or a sources rescan would silently rename presets. */
+export function nextExportName(keyName, scaleName, exists) {
+  const slug = (text) => text.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  const root = `chord_finder_${slug(keyName)}_${slug(scaleName)}`;
+  let base = root;
+  for (let suffix = 2; exists(base) && suffix < 1000; suffix += 1) {
+    base = `${root}_${suffix}`;
+  }
+  const label = base
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+  return { base, label };
+}
+
 /* host_write_file converts JS strings through a C string, so any 0x00 byte
  * truncates the file and bytes above 0x7f are re-encoded as UTF-8. Binary
  * MIDI must instead travel through host_system_cmd as printf octal escapes. */

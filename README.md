@@ -91,17 +91,20 @@ notes to both destinations. The **Test Output** item in Menu plays a short test
 chord and is useful when checking routing. **Export Chords** saves the stored
 progression to two places:
 
-- A preset named **Chord Finder** for
-  [Impressive Chords](https://github.com/mestela/schwung-impressive-chords), at
-  `modules/midi_fx/impressive-chords/presets/chord_finder.chords`. Impressive
-  Chords only reads presets when it starts or rescans, so turn its **Scan
-  Presets** knob to `1` (or re-add the module to a chain) to load the export.
-  Each export overwrites this one preset.
+- A new preset for
+  [Impressive Chords](https://github.com/mestela/schwung-impressive-chords),
+  named after the current key and scale (for example **Chord Finder A
+  Lydian**, then **Chord Finder A Lydian 2** for a repeat), at
+  `modules/midi_fx/impressive-chords/presets/chord_finder_<key>_<scale>.chords`.
+  Every export appears as its own entry in the Impressive Chords preset list.
+  Impressive Chords only reads presets when it starts or rescans, so turn its
+  **Scan Presets** knob to `1` (or re-add the module to a chain) to load new
+  exports.
 - A standard MIDI file plus the same `.chords` text at
-  `modules/tools/chord-finder/exports/chord_finder.mid` and
-  `chord_finder.chords` (under `/data/UserData/schwung/` on the Move). Copy
-  them off the device with `scp`, for example:
-  `scp ableton@move.local:/data/UserData/schwung/modules/tools/chord-finder/exports/chord_finder.mid .`
+  `modules/tools/chord-finder/exports/chord_finder_<key>_<scale>.mid` and
+  `.chords` (under `/data/UserData/schwung/` on the Move). Copy them off the
+  device with `scp`, for example:
+  `scp ableton@move.local:/data/UserData/schwung/modules/tools/chord-finder/exports/chord_finder_a_lydian.mid .`
 
 To audition through a synth loaded in Schwung's signal chain, set **Preview
 Route** to `SCHWUNG` and match the Chord Finder MIDI channel to the chain
