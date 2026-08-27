@@ -268,7 +268,6 @@ export const ENCODER_DETENT_GEAR = 2;
 export const OVERLAY_TICKS = 150;
 export const IMPRESSIVE_CHORDS_DIR = '/data/UserData/schwung/modules/midi_fx/impressive-chords';
 export const IMPRESSIVE_CHORDS_PRESETS_DIR = `${IMPRESSIVE_CHORDS_DIR}/presets`;
-export const IMPRESSIVE_CHORDS_PRESETS_CHORDS_DIR = `${IMPRESSIVE_CHORDS_PRESETS_DIR}/chords`;
 export const IMPRESSIVE_CHORDS_SOURCES_DIR = `${IMPRESSIVE_CHORDS_DIR}/sources`;
 export const CHORD_FINDER_DIR = '/data/UserData/schwung/modules/tools/chord-finder';
 export const CHORD_FINDER_EXPORTS_DIR = `${CHORD_FINDER_DIR}/exports`;
@@ -359,10 +358,13 @@ export function formatMidiFile(chords, options = {}) {
   ]);
 }
 
-export function bytesToHostString(bytes) {
-  let text = '';
+/* host_write_file converts JS strings through a C string, so any 0x00 byte
+ * truncates the file and bytes above 0x7f are re-encoded as UTF-8. Binary
+ * MIDI must instead travel through host_system_cmd as printf octal escapes. */
+export function midiWriteCommand(path, bytes) {
+  let format = '';
   for (let index = 0; index < bytes.length; index += 1) {
-    text += String.fromCharCode(bytes[index]);
+    format += `\\${bytes[index].toString(8).padStart(3, '0')}`;
   }
-  return text;
+  return `sh -c "printf '${format}' > ${path}"`;
 }

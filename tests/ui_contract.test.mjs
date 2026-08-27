@@ -5,7 +5,8 @@ import { readFileSync } from 'node:fs';
 const source = readFileSync(new URL('../src/ui.js', import.meta.url), 'utf8');
 
 test('imports upgraded UI state through a cache-safe module generation', () => {
-  assert.match(source, /from '\.\/ui_state_v7\.mjs';/);
+  assert.match(source, /from '\.\/ui_state_v8\.mjs';/);
+  assert.doesNotMatch(source, /ui_state_v7\.mjs/);
 });
 
 test('first DSP poll establishes a baseline without replacing the forced startup LED queue', () => {
@@ -107,7 +108,7 @@ test('right-pad velocity and held intent clear on release and lifecycle cleanup'
 });
 
 test('preview and progression routing both expose Schwung', () => {
-  assert.match(source, /rightPadIndex, PREVIEW_ROUTES, ROUTES, takeLedBatch/);
+  assert.match(source, /PREVIEW_ROUTES, ROUTES, takeLedBatch/);
   assert.match(source, /menuCursor === 1[\s\S]{0,180}ROUTES[\s\S]{0,220}menuCursor === 2[\s\S]{0,180}PREVIEW_ROUTES/);
 });
 
@@ -142,6 +143,27 @@ test('menu export writes Impressive Chords presets without replacing TEST OUTPUT
   assert.match(source, /menuCursor === 5[\s\S]{0,80}exportProgression\(\)/);
   assert.match(source, /writeChordsToDir\(IMPRESSIVE_CHORDS_PRESETS_DIR, 'chord_finder\.chords'/);
   assert.match(source, /writeChordsToDir\(IMPRESSIVE_CHORDS_SOURCES_DIR, 'chord_finder\.json'/);
-  assert.match(source, /closeMenuWithOverlay\('EXPORTED - SCAN PRESETS'/);
-  assert.doesNotMatch(source, /impressiveChordsAvailable/);
+});
+
+test('export detects Impressive Chords and keeps one stable preset name', () => {
+  assert.match(source, /host_file_exists/);
+  assert.match(source, /`\$\{IMPRESSIVE_CHORDS_DIR\}\/module\.json`/);
+  assert.match(source, /formatImpressiveChordsFile\('Chord Finder',/);
+  assert.doesNotMatch(source, /IMPRESSIVE_CHORDS_PRESETS_CHORDS_DIR/);
+  assert.doesNotMatch(source, /writeChordsToDir\(CHORD_FINDER_DIR,/);
+});
+
+test('MIDI export writes real bytes through host_system_cmd, not host_write_file', () => {
+  assert.match(source, /midiWriteCommand\(/);
+  assert.match(source, /host_system_cmd/);
+  assert.doesNotMatch(source, /bytesToHostString/);
+});
+
+test('export overlays fit the 21-character display line', () => {
+  assert.match(source, /closeMenuWithOverlay\(\s*'EXPORTED-SCAN PRESETS'/);
+  const overlays = [...source.matchAll(/closeMenuWithOverlay\(\s*(?:icInstalled \? )?'([^']*)'/g)].map((m) => m[1]);
+  assert.ok(overlays.length >= 4);
+  for (const text of overlays) {
+    assert.ok(text.length <= 21, `overlay too long for display: ${text}`);
+  }
 });

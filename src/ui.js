@@ -19,15 +19,15 @@ import {
   stopDisplayVoice,
 } from './keyboard_v2.mjs';
 import {
-  appendProgressionChord, assignProgressionSlot, bytesToHostString, clearHeldCandidates,
+  appendProgressionChord, assignProgressionSlot, clearHeldCandidates,
   createUiState, encoderDetent, formatImpressiveChordsFile, formatImpressiveChordsJson,
-  formatMidiFile, leftPadIndex, migrateSettings, nextExplorationMode, packedProgressionChords,
-  pressCandidate, progressionLength, progressionNeighbors, releaseCandidate,
-  resolveStepPress, revoiceHeldCandidates, rightPadIndex, PREVIEW_ROUTES, ROUTES, takeLedBatch,
-  hostSupportsActiveMoveInject, CHORD_FINDER_DIR, CHORD_FINDER_EXPORTS_DIR,
-  ENCODER_DETENT_GEAR, IMPRESSIVE_CHORDS_PRESETS_CHORDS_DIR, IMPRESSIVE_CHORDS_PRESETS_DIR,
-  IMPRESSIVE_CHORDS_SOURCES_DIR, OVERLAY_TICKS,
-} from './ui_state_v7.mjs';
+  formatMidiFile, leftPadIndex, midiWriteCommand, migrateSettings, nextExplorationMode,
+  packedProgressionChords, pressCandidate, progressionLength, progressionNeighbors,
+  releaseCandidate, resolveStepPress, revoiceHeldCandidates, rightPadIndex,
+  PREVIEW_ROUTES, ROUTES, takeLedBatch, hostSupportsActiveMoveInject,
+  CHORD_FINDER_EXPORTS_DIR, ENCODER_DETENT_GEAR, IMPRESSIVE_CHORDS_DIR,
+  IMPRESSIVE_CHORDS_PRESETS_DIR, IMPRESSIVE_CHORDS_SOURCES_DIR, OVERLAY_TICKS,
+} from './ui_state_v8.mjs';
 
 const SETTINGS_PATH = '/data/UserData/schwung/modules/tools/chord-finder/settings.json';
 const ROUTE_LABELS = { move: 'MOVE/USB-C', external: 'USB-A', both: 'BOTH', schwung: 'SCHWUNG' };
@@ -207,6 +207,17 @@ function writeChordsToDir(dir, filename, content) {
   return writeHostFile(`${dir}/${filename}`, content);
 }
 
+function hostFileExists(path) {
+  return typeof host_file_exists === 'function' && host_file_exists(path) === true;
+}
+
+function writeMidiExport(midiBytes) {
+  if (typeof host_system_cmd !== 'function') return false;
+  ensureHostDir(CHORD_FINDER_EXPORTS_DIR);
+  const command = midiWriteCommand(`${CHORD_FINDER_EXPORTS_DIR}/chord_finder.mid`, midiBytes);
+  return host_system_cmd(command) === 0;
+}
+
 function closeMenuWithOverlay(text, spoken) {
   menuOpen = false;
   menuEditing = false;
@@ -221,33 +232,39 @@ function exportProgression() {
     closeMenuWithOverlay('NO CHORDS TO EXPORT', 'Store chords in steps first, then export');
     return;
   }
-  const label = `Chord Finder ${KEY_NAMES[state.settings.key]} ${getScale(state.settings.scaleId).name}`;
-  const chordsText = formatImpressiveChordsFile(label, chords);
+  const chordsText = formatImpressiveChordsFile('Chord Finder', chords);
   const chordsJson = formatImpressiveChordsJson(chords);
   const midiBytes = formatMidiFile(chords, { gate: state.settings.gate, beatsPerChord: 1 });
-  const wroteIc = [
-    writeChordsToDir(IMPRESSIVE_CHORDS_PRESETS_DIR, 'chord_finder.chords', chordsText),
-    writeChordsToDir(IMPRESSIVE_CHORDS_PRESETS_CHORDS_DIR, 'chord_finder.chords', chordsText),
-    writeChordsToDir(IMPRESSIVE_CHORDS_SOURCES_DIR, 'chord_finder.json', chordsJson),
-  ].some(Boolean);
-  const wroteLocal = [
-    writeChordsToDir(CHORD_FINDER_DIR, 'chord_finder.chords', chordsText),
-    writeChordsToDir(CHORD_FINDER_EXPORTS_DIR, 'chord_finder.chords', chordsText),
-    writeChordsToDir(CHORD_FINDER_EXPORTS_DIR, 'chord_finder.mid', bytesToHostString(midiBytes)),
-  ].some(Boolean);
+  const icInstalled = hostFileExists(`${IMPRESSIVE_CHORDS_DIR}/module.json`);
+  const wrotePreset = icInstalled
+    && writeChordsToDir(IMPRESSIVE_CHORDS_PRESETS_DIR, 'chord_finder.chords', chordsText);
+  if (wrotePreset) writeChordsToDir(IMPRESSIVE_CHORDS_SOURCES_DIR, 'chord_finder.json', chordsJson);
+  const wroteLocal = writeChordsToDir(CHORD_FINDER_EXPORTS_DIR, 'chord_finder.chords', chordsText);
+  const wroteMidi = writeMidiExport(midiBytes);
+  const midiSpoken = wroteMidi
+    ? 'The MIDI file chord_finder.mid is in the chord-finder exports folder.'
+    : 'The MIDI file could not be written.';
 
-  if (wroteIc) {
+  if (wrotePreset) {
     exportStatus = 'SAVED';
-    closeMenuWithOverlay('EXPORTED - SCAN PRESETS', `Exported ${chords.length} chords. Open Impressive Chords and turn Scan Presets on.`);
+    closeMenuWithOverlay(
+      'EXPORTED-SCAN PRESETS',
+      `Exported ${chords.length} chords as the Impressive Chords preset named Chord Finder. Turn Scan Presets on in Impressive Chords to load it. ${midiSpoken}`,
+    );
     return;
   }
-  if (wroteLocal) {
-    exportStatus = 'LOCAL';
-    closeMenuWithOverlay('SAVED IN CHORD FINDER', 'Saved a local export. Impressive Chords preset folder was not writable.');
+  if (wroteLocal || wroteMidi) {
+    exportStatus = icInstalled ? 'FAIL' : 'NO IC';
+    closeMenuWithOverlay(
+      icInstalled ? 'IC WRITE FAILED' : 'NO IMPRESSIVE CHORDS',
+      icInstalled
+        ? `The Impressive Chords preset folder was not writable. Saved chord_finder.chords in the chord-finder exports folder instead. ${midiSpoken}`
+        : `Impressive Chords is not installed. Saved chord_finder.chords in the chord-finder exports folder. ${midiSpoken}`,
+    );
     return;
   }
   exportStatus = 'FAIL';
-  closeMenuWithOverlay('EXPORT FAILED', 'Export failed');
+  closeMenuWithOverlay('EXPORT FAILED', 'Export failed. No files could be written.');
 }
 
 function loadSettings() {

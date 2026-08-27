@@ -88,11 +88,20 @@ For a Move instrument:
 For an external instrument, connect it to Move's USB-A port, set **Preview
 Route** to `USB-A`, and match the MIDI channels. Choose `BOTH` to send the same
 notes to both destinations. The **Test Output** item in Menu plays a short test
-chord and is useful when checking routing. **Export Chords** writes the saved
-progression as a `.chords` preset into
-[Impressive Chords](https://github.com/mestela/schwung-impressive-chords)'
-preset folder, and also saves a `.mid` file in Chord Finder's `exports`
-folder. In Impressive Chords, turn **Scan Presets** to load the new preset.
+chord and is useful when checking routing. **Export Chords** saves the stored
+progression to two places:
+
+- A preset named **Chord Finder** for
+  [Impressive Chords](https://github.com/mestela/schwung-impressive-chords), at
+  `modules/midi_fx/impressive-chords/presets/chord_finder.chords`. Impressive
+  Chords only reads presets when it starts or rescans, so turn its **Scan
+  Presets** knob to `1` (or re-add the module to a chain) to load the export.
+  Each export overwrites this one preset.
+- A standard MIDI file plus the same `.chords` text at
+  `modules/tools/chord-finder/exports/chord_finder.mid` and
+  `chord_finder.chords` (under `/data/UserData/schwung/` on the Move). Copy
+  them off the device with `scp`, for example:
+  `scp ableton@move.local:/data/UserData/schwung/modules/tools/chord-finder/exports/chord_finder.mid .`
 
 To audition through a synth loaded in Schwung's signal chain, set **Preview
 Route** to `SCHWUNG` and match the Chord Finder MIDI channel to the chain

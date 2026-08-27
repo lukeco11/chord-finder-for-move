@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import {
   appendProgressionChord,
   assignProgressionSlot,
-  bytesToHostString,
   clearHeldCandidates,
   createUiState,
   encoderDetent,
@@ -14,6 +13,7 @@ import {
   formatMidiFile,
   latestHeldCandidate,
   leftPadIndex,
+  midiWriteCommand,
   migrateSettings,
   nextExplorationMode,
   packedProgressionChords,
@@ -28,7 +28,7 @@ import {
   rightPadIndex,
   takeLedBatch,
   hostSupportsActiveMoveInject,
-} from '../src/ui_state_v7.mjs';
+} from '../src/ui_state_v8.mjs';
 
 const chord = Object.freeze({
   tonicOffset: 0,
@@ -386,10 +386,10 @@ test('MIDI export writes a type 0 file with one event block per packed chord', (
     { index: 1, notes: [65, 69, 72] },
   ];
   const bytes = formatMidiFile(packed, { ticksPerBeat: 96, beatsPerChord: 1, gate: 50 });
-  const text = bytesToHostString(bytes);
+  const ascii = (start, end) => String.fromCharCode(...bytes.slice(start, end));
 
-  assert.equal(text.slice(0, 4), 'MThd');
-  assert.equal(text.slice(14, 18), 'MTrk');
+  assert.equal(ascii(0, 4), 'MThd');
+  assert.equal(ascii(14, 18), 'MTrk');
   assert.equal(bytes[8], 0x00);
   assert.equal(bytes[9], 0x00);
   assert.equal(bytes.includes(0x90), true);
@@ -398,4 +398,20 @@ test('MIDI export writes a type 0 file with one event block per packed chord', (
   assert.equal(bytes[bytes.length - 3], 0xff);
   assert.equal(bytes[bytes.length - 2], 0x2f);
   assert.equal(bytes[bytes.length - 1], 0x00);
+});
+
+test('MIDI write command carries exact bytes through allowlisted sh printf', () => {
+  const bytes = Uint8Array.from([0x4d, 0x54, 0x68, 0x64, 0x00, 0x01, 0x90, 0x3c, 0xff]);
+  const command = midiWriteCommand('/data/UserData/schwung/modules/tools/chord-finder/exports/chord_finder.mid', bytes);
+
+  assert.equal(command.startsWith('sh -c "printf \''), true);
+  assert.equal(
+    command.endsWith(' > /data/UserData/schwung/modules/tools/chord-finder/exports/chord_finder.mid"'),
+    true,
+  );
+
+  const format = command.match(/printf '((?:\\[0-7]{3})+)'/)?.[1];
+  assert.ok(format, 'printf format must be made only of 3-digit octal escapes');
+  const decoded = format.match(/\\[0-7]{3}/g).map((escape) => parseInt(escape.slice(1), 8));
+  assert.deepEqual(decoded, [...bytes]);
 });
