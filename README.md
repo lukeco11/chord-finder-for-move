@@ -135,6 +135,15 @@ Press the main jog wheel to cycle through three views:
 Hold **Shift** and press a left pad to require that pitch as the top note of
 the suggested chords. Press it the same way again to remove the constraint.
 
+Hold **Shift** and click the main jog wheel to toggle the **Theory view**. It
+replaces the piano with a theory card for the sounding chord: its spelled
+tones (for example `A C# E G#`), its interval construction (`1 3 5 7`), its
+harmonic function and where it tends to resolve (`DOM>I`, `SEC DOM>V`), and
+your eight progression slots as roman numerals in two rows of four. During
+playback the active step is highlighted, so you can watch the analysis move
+through your progression. The chord name line also shows the roman numeral of
+the current chord on both views.
+
 ## Build a progression
 
 There are eight progression slots, shown on Step buttons 1-8.
@@ -172,6 +181,7 @@ key or octave transposes the saved progression.
 | Encoders 1-8 | Key, Scale, Color, Extension, Inversion, Spread, Strum, Rate |
 | Up / Down | Move the playable range by octaves |
 | Main jog click | Cycle ROOT, NEXT, and VOICE modes |
+| Shift + jog click | Toggle the Theory view (chord tones, intervals, function, progression numerals) |
 | Shift + left pad | Set or clear a required top note |
 | Step 1-8 | Store a held right-pad chord, or preview / fill a gap |
 | Shift + Step | Store the held or last-auditioned chord |

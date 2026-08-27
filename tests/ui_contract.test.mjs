@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 const source = readFileSync(new URL('../src/ui.js', import.meta.url), 'utf8');
 
 test('imports upgraded UI state through a cache-safe module generation', () => {
-  assert.match(source, /from '\.\/ui_state_v8\.mjs';/);
+  assert.match(source, /from '\.\/ui_state_v9\.mjs';/);
   assert.doesNotMatch(source, /ui_state_v7\.mjs/);
 });
 
@@ -167,4 +167,25 @@ test('export overlays fit the 21-character display line', () => {
   for (const text of overlays) {
     assert.ok(text.length <= 21, `overlay too long for display: ${text}`);
   }
+});
+
+test('main screen right-aligns the roman numeral on the chord line', () => {
+  assert.match(source, /const numeral = overlayText \? '' : chordNumeral\(displayChord\);/);
+  assert.match(source, /print\(128 - 6 \* numeral\.length, 10, numeral, 1\);/);
+  assert.doesNotMatch(source, /function romanNumeral\(/);
+});
+
+test('Shift plus jog click toggles the theory view outside the menu', () => {
+  assert.match(source, /let theoryView = false;/);
+  assert.match(source, /if \(!menuOpen\) \{\s*if \(shiftHeld\) \{\s*theoryView = !theoryView;/);
+  assert.match(source, /if \(menuOpen\) drawMenu\(\);\s*else if \(theoryView\) drawTheory\(\);\s*else drawMain\(\);/);
+});
+
+test('theory view teaches spelling, intervals, function, and progression numerals', () => {
+  const theoryBody = source.match(/function drawTheory\(\) \{([\s\S]*?)\n\}/)?.[1] ?? '';
+  assert.match(theoryBody, /spellPitchClass\(/);
+  assert.match(theoryBody, /intervalDegreeLabels\(getChordIntervals\(/);
+  assert.match(theoryBody, /harmonicFunctionInfo\(/);
+  assert.match(theoryBody, /progressionNumeralRows\(state\.progression\)/);
+  assert.match(theoryBody, /loopStep/);
 });

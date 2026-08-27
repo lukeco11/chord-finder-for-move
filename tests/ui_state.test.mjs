@@ -4,7 +4,11 @@ import assert from 'node:assert/strict';
 import {
   appendProgressionChord,
   assignProgressionSlot,
+  chordNumeral,
   clearHeldCandidates,
+  harmonicFunctionInfo,
+  intervalDegreeLabels,
+  progressionNumeralRows,
   createUiState,
   encoderDetent,
   ENCODER_DETENT_GEAR,
@@ -29,7 +33,7 @@ import {
   rightPadIndex,
   takeLedBatch,
   hostSupportsActiveMoveInject,
-} from '../src/ui_state_v8.mjs';
+} from '../src/ui_state_v9.mjs';
 
 const chord = Object.freeze({
   tonicOffset: 0,
@@ -434,4 +438,59 @@ test('MIDI write command carries exact bytes through allowlisted sh printf', () 
   assert.ok(format, 'printf format must be made only of 3-digit octal escapes');
   const decoded = format.match(/\\[0-7]{3}/g).map((escape) => parseInt(escape.slice(1), 8));
   assert.deepEqual(decoded, [...bytes]);
+});
+
+test('interval degrees label chord construction for the theory view', () => {
+  assert.deepEqual(intervalDegreeLabels([0, 4, 7, 11]), ['1', '3', '5', '7']);
+  assert.deepEqual(intervalDegreeLabels([0, 3, 6, 10]), ['1', 'b3', 'b5', 'b7']);
+  assert.deepEqual(intervalDegreeLabels([0, 4, 8]), ['1', '3', '#5']);
+  assert.deepEqual(intervalDegreeLabels([0, 4, 7, 10, 14, 17]), ['1', '3', '5', 'b7', '9', '11']);
+  assert.deepEqual(intervalDegreeLabels([0, 2, 7]), ['1', '2', '5']);
+});
+
+test('chord numerals cover diatonic, secondary, and borrowed harmony', () => {
+  assert.equal(chordNumeral({ ...chord, scaleDegree: 4 }), 'V');
+  assert.equal(chordNumeral({ ...chord, scaleDegree: 1, quality: 'minor' }), 'ii');
+  assert.equal(chordNumeral({ ...chord, scaleDegree: 6, quality: 'diminished' }), 'viio');
+  assert.equal(
+    chordNumeral({ ...chord, scaleDegree: -1, sourceClass: 'secondary', targetDegree: 3 }),
+    'V/IV',
+  );
+  assert.equal(
+    chordNumeral({ ...chord, scaleDegree: -1, sourceClass: 'borrowed', tonicOffset: 10 }),
+    'bVII',
+  );
+  assert.equal(
+    chordNumeral({ ...chord, scaleDegree: -1, sourceClass: 'borrowed', tonicOffset: 8, quality: 'minor' }),
+    'bvi',
+  );
+  assert.equal(chordNumeral(null), '');
+});
+
+test('harmonic function explains each chord role and where dominants resolve', () => {
+  assert.deepEqual(harmonicFunctionInfo({ ...chord, scaleDegree: 0 }), { label: 'TONIC', resolvesTo: '' });
+  assert.deepEqual(harmonicFunctionInfo({ ...chord, scaleDegree: 3 }), { label: 'SUBDOM', resolvesTo: '' });
+  assert.deepEqual(harmonicFunctionInfo({ ...chord, scaleDegree: 4 }), { label: 'DOM', resolvesTo: 'I' });
+  assert.deepEqual(
+    harmonicFunctionInfo({ ...chord, scaleDegree: -1, sourceClass: 'secondary', targetDegree: 4 }),
+    { label: 'SEC DOM', resolvesTo: 'V' },
+  );
+  assert.deepEqual(
+    harmonicFunctionInfo({ ...chord, scaleDegree: -1, sourceClass: 'borrowed', tonicOffset: 10 }),
+    { label: 'BORROWED', resolvesTo: '' },
+  );
+  assert.deepEqual(harmonicFunctionInfo(null), { label: '', resolvesTo: '' });
+});
+
+test('progression numerals render as two rows of four with rests as dashes', () => {
+  const progression = Array(8).fill(null);
+  progression[0] = { ...chord, scaleDegree: 0 };
+  progression[1] = { ...chord, scaleDegree: 5, quality: 'minor' };
+  progression[4] = { ...chord, scaleDegree: 4 };
+  progression[7] = { ...chord, scaleDegree: -1, sourceClass: 'secondary', targetDegree: 3 };
+
+  assert.deepEqual(progressionNumeralRows(progression), [
+    ['I', 'vi', '--', '--'],
+    ['V', '--', '--', 'V/IV'],
+  ]);
 });

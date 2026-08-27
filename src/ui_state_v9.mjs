@@ -358,6 +358,67 @@ export function formatMidiFile(chords, options = {}) {
   ]);
 }
 
+const DEGREE_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+const SEMITONE_NUMERALS = ['I', 'bII', 'II', 'bIII', 'III', 'IV', 'bV', 'V', 'bVI', 'VI', 'bVII', 'VII'];
+const INTERVAL_DEGREES = {
+  0: '1', 1: 'b2', 2: '2', 3: 'b3', 4: '3', 5: '4', 6: 'b5', 7: '5',
+  8: '#5', 9: '6', 10: 'b7', 11: '7', 12: '8', 13: 'b9', 14: '9', 15: '#9', 17: '11',
+};
+const DEGREE_FUNCTIONS = ['TONIC', 'SUBDOM', 'TONIC', 'SUBDOM', 'DOM', 'TONIC', 'DOM'];
+
+export function intervalDegreeLabels(intervals) {
+  return (intervals || []).map((interval) => INTERVAL_DEGREES[interval] || String(interval));
+}
+
+function isMinorNumeral(quality) {
+  return quality === 'minor' || quality === 'm7b5' || quality === 'diminished' || quality === 'dim7';
+}
+
+function isDiminishedNumeral(quality) {
+  return quality === 'diminished' || quality === 'dim7' || quality === 'm7b5';
+}
+
+function secondaryTarget(chord) {
+  return chord.sourceClass === 'secondary' && Number.isFinite(chord.targetDegree) && chord.targetDegree >= 0
+    ? DEGREE_NUMERALS[chord.targetDegree % 7]
+    : '';
+}
+
+export function chordNumeral(chord) {
+  if (!chord) return '';
+  const target = secondaryTarget(chord);
+  if (target) return `V/${target}`;
+  let numeral = chord.scaleDegree >= 0
+    ? DEGREE_NUMERALS[chord.scaleDegree % 7]
+    : SEMITONE_NUMERALS[((chord.tonicOffset % 12) + 12) % 12];
+  if (!numeral) return '';
+  if (isMinorNumeral(chord.quality)) numeral = numeral.toLowerCase();
+  if (isDiminishedNumeral(chord.quality)) numeral += 'o';
+  return numeral;
+}
+
+export function harmonicFunctionInfo(chord) {
+  if (!chord) return { label: '', resolvesTo: '' };
+  const target = secondaryTarget(chord);
+  if (target) return { label: 'SEC DOM', resolvesTo: target };
+  if (chord.scaleDegree >= 0) {
+    const label = DEGREE_FUNCTIONS[chord.scaleDegree % 7];
+    return { label, resolvesTo: label === 'DOM' ? 'I' : '' };
+  }
+  if (chord.sourceClass === 'borrowed') return { label: 'BORROWED', resolvesTo: '' };
+  if (chord.sourceClass === 'color') return { label: 'COLOR', resolvesTo: '' };
+  return { label: '', resolvesTo: '' };
+}
+
+export function progressionNumeralRows(progression) {
+  const cells = [];
+  for (let slot = 0; slot < 8; slot += 1) {
+    const chord = Array.isArray(progression) ? progression[slot] : null;
+    cells.push(chord ? (chordNumeral(chord) || '?') : '--');
+  }
+  return [cells.slice(0, 4), cells.slice(4)];
+}
+
 /* Impressive Chords regenerates a preset's display name from its source
  * filename with Python str.title(), so the label must be exactly the
  * title-cased base name or a sources rescan would silently rename presets. */

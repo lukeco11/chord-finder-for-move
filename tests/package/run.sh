@@ -26,7 +26,7 @@ node -e '
 test -f src/ui.js
 test -f src/harmony.mjs
 test -f src/keyboard_v2.mjs
-test -f src/ui_state_v8.mjs
+test -f src/ui_state_v9.mjs
 test -f src/dsp/chord_finder.c
 test -f src/install_swap.c
 test -f src/help.json
@@ -46,7 +46,7 @@ grep -q 'ARM aarch64' scripts/build-dsp.sh
 grep -q 'ARM aarch64' scripts/package.sh
 grep -Fq -- '--user "$(id -u):$(id -g)"' scripts/build.sh
 grep -q 'keyboard_v2.mjs' scripts/package.sh
-grep -q 'ui_state_v8.mjs' scripts/package.sh
+grep -q 'ui_state_v9.mjs' scripts/package.sh
 grep -q 'verify-package.sh' scripts/package.sh
 
 if [ -f dist/chord-finder-module.tar.gz ]; then

@@ -34,6 +34,25 @@
       ]
     },
     {
+      "title": "Theory View",
+      "lines": [
+        "Shift + jog click",
+        "swaps the piano for",
+        "a theory card:",
+        "chord tones,",
+        "intervals, harmonic",
+        "function, and your",
+        "eight steps as",
+        "roman numerals.",
+        "The playing step is",
+        "highlighted.",
+        "",
+        "Shift + jog click",
+        "again returns to",
+        "the piano."
+      ]
+    },
+    {
       "title": "Piano Display",
       "lines": [
         "The lower display",

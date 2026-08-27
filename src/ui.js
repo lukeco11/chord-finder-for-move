@@ -12,23 +12,24 @@ import {
 import { announce, announceMenuItem } from '/data/UserData/schwung/shared/screen_reader.mjs';
 
 import {
-  SCALES, buildChordNotes, generateCandidates, getScale, leftPadNote, nameChord,
+  SCALES, buildChordNotes, generateCandidates, getChordIntervals, getScale, leftPadNote,
+  nameChord, spellPitchClass,
 } from './harmony.mjs';
 import {
   clearDisplayVoices, createDisplayVoiceState, keyboardState, startDisplayVoice,
   stopDisplayVoice,
 } from './keyboard_v2.mjs';
 import {
-  appendProgressionChord, assignProgressionSlot, clearHeldCandidates,
+  appendProgressionChord, assignProgressionSlot, chordNumeral, clearHeldCandidates,
   createUiState, encoderDetent, formatImpressiveChordsFile, formatImpressiveChordsJson,
-  formatMidiFile, leftPadIndex, midiWriteCommand, migrateSettings, nextExplorationMode,
-  nextExportName,
+  formatMidiFile, harmonicFunctionInfo, intervalDegreeLabels, leftPadIndex,
+  midiWriteCommand, migrateSettings, nextExplorationMode, nextExportName,
   packedProgressionChords, pressCandidate, progressionLength, progressionNeighbors,
-  releaseCandidate, resolveStepPress, revoiceHeldCandidates, rightPadIndex,
-  PREVIEW_ROUTES, ROUTES, takeLedBatch, hostSupportsActiveMoveInject,
+  progressionNumeralRows, releaseCandidate, resolveStepPress, revoiceHeldCandidates,
+  rightPadIndex, PREVIEW_ROUTES, ROUTES, takeLedBatch, hostSupportsActiveMoveInject,
   CHORD_FINDER_EXPORTS_DIR, ENCODER_DETENT_GEAR, IMPRESSIVE_CHORDS_DIR,
   IMPRESSIVE_CHORDS_PRESETS_DIR, IMPRESSIVE_CHORDS_SOURCES_DIR, OVERLAY_TICKS,
-} from './ui_state_v8.mjs';
+} from './ui_state_v9.mjs';
 
 const SETTINGS_PATH = '/data/UserData/schwung/modules/tools/chord-finder/settings.json';
 const ROUTE_LABELS = { move: 'MOVE/USB-C', external: 'USB-A', both: 'BOTH', schwung: 'SCHWUNG' };
@@ -70,6 +71,7 @@ let deleteHeld = false;
 let shiftHeld = false;
 let captureArmed = false;
 let menuOpen = false;
+let theoryView = false;
 let menuCursor = 0;
 let menuEditing = false;
 let saveCountdown = -1;
@@ -402,15 +404,6 @@ function drawMenu() {
   print(0, 61, menuEditing ? 'Turn jog  Click done' : 'Jog + click', 1);
 }
 
-function romanNumeral(chord) {
-  if (!chord || chord.scaleDegree < 0) return '';
-  const numerals = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
-  let numeral = numerals[chord.scaleDegree] || '';
-  if (chord.quality === 'minor' || chord.quality === 'm7b5') numeral = numeral.toLowerCase();
-  if (chord.quality === 'diminished' || chord.quality === 'dim7' || chord.quality === 'm7b5') numeral += 'o';
-  return numeral;
-}
-
 function modeContext() {
   if (state.settings.mode === 'root') return focusPc === null ? 'ROOT: CHOOSE' : `ROOT ${KEY_NAMES[focusPc]}`;
   if (state.settings.mode === 'voice') return `VOICE ${lastAuditioned ? nameChord(lastAuditioned, { key: state.settings.key, scaleId: state.settings.scaleId }) : 'CHOOSE'}`;
@@ -486,20 +479,64 @@ function drawMain() {
   clear_screen();
   print(0, 0, truncate(keyName + ' ' + scale.name, 15), 1);
   print(90, 0, truncate(routeStatus + ' C' + (state.settings.channel + 1), 6), 1);
-  print(0, 10, truncate(overlayText || currentLabel, 21), 1);
+  drawChordLine();
   const top = topNotePc === null ? '' : `  TOP ${KEY_NAMES[topNotePc]}`;
   print(0, 20, truncate(modeContext() + top, 21), 1);
-  const category = displayChord && romanNumeral(displayChord)
-    ? `${currentCategory} ${romanNumeral(displayChord)}`
-    : currentCategory;
-  print(0, 30, truncate(category.toUpperCase(), 10), 1);
+  print(0, 30, truncate(currentCategory.toUpperCase(), 10), 1);
   const transport = running ? 'PLAY' : (loopArmed ? 'WAIT' : 'OFF');
   print(62, 30, `O${state.settings.octave} ${RATE_SHORT_LABELS[state.settings.rate]} ${transport}`, 1);
   drawPianoKeyboard();
 }
 
+function drawChordLine() {
+  const numeral = overlayText ? '' : chordNumeral(displayChord);
+  print(0, 10, truncate(overlayText || currentLabel, numeral ? 20 - numeral.length : 21), 1);
+  print(128 - 6 * numeral.length, 10, numeral, 1);
+}
+
+function drawTheory() {
+  const scale = getScale(state.settings.scaleId);
+  const keyName = KEY_NAMES[state.settings.key];
+  const routeStatus = routeUnavailable(state.settings.previewRoute)
+    ? '!M'
+    : ROUTE_SHORT[state.settings.previewRoute];
+  clear_screen();
+  print(0, 0, truncate(keyName + ' ' + scale.name, 15), 1);
+  print(90, 0, truncate(routeStatus + ' C' + (state.settings.channel + 1), 6), 1);
+  drawChordLine();
+  const chord = displayChord || lastAuditioned || currentChord;
+  const tones = [];
+  const seen = new Set();
+  const spelledSource = displayNotes.length ? displayNotes : (chord ? slotNotes(chord) : []);
+  for (const note of spelledSource) {
+    const pitchClass = ((note % 12) + 12) % 12;
+    if (seen.has(pitchClass)) continue;
+    seen.add(pitchClass);
+    tones.push(spellPitchClass(pitchClass, { key: state.settings.key, scaleId: state.settings.scaleId }));
+  }
+  print(0, 20, truncate(tones.join(' '), 21), 1);
+  const info = harmonicFunctionInfo(chord);
+  const functionText = info.resolvesTo ? `${info.label}>${info.resolvesTo}` : info.label;
+  const intervals = chord ? intervalDegreeLabels(getChordIntervals(chord)).join(' ') : '';
+  print(0, 30, truncate(intervals, functionText ? 20 - functionText.length : 21), 1);
+  print(128 - 6 * functionText.length, 30, functionText, 1);
+  const rows = progressionNumeralRows(state.progression);
+  for (let row = 0; row < 2; row += 1) {
+    const y = row === 0 ? 42 : 53;
+    print(0, y, String(row * 4 + 1), 1);
+    for (let column = 0; column < 4; column += 1) {
+      const slot = row * 4 + column;
+      const x = 8 + column * 30;
+      const active = running && loopStep === slot;
+      if (active) fill_rect(x - 1, y - 1, 30, 10, 1);
+      print(x, y, truncate(rows[row][column], 5), active ? 0 : 1);
+    }
+  }
+}
+
 function draw() {
   if (menuOpen) drawMenu();
+  else if (theoryView) drawTheory();
   else drawMain();
   dirty = false;
 }
@@ -1070,6 +1107,12 @@ globalThis.onMidiMessageInternal = function onMidiMessageInternal(data) {
   }
   if (d1 === MoveMainButton && d2 > 0) {
     if (!menuOpen) {
+      if (shiftHeld) {
+        theoryView = !theoryView;
+        dirty = true;
+        announce(theoryView ? 'Theory view' : 'Main view');
+        return;
+      }
       cycleExplorationMode();
       return;
     }
