@@ -5,7 +5,8 @@ import { readFileSync } from 'node:fs';
 const source = readFileSync(new URL('../src/ui.js', import.meta.url), 'utf8');
 
 test('imports upgraded UI state through a cache-safe module generation', () => {
-  assert.match(source, /from '\.\/ui_state_v7\.mjs';/);
+  assert.match(source, /from '\.\/ui_state_v9\.mjs';/);
+  assert.doesNotMatch(source, /ui_state_v7\.mjs/);
 });
 
 test('first DSP poll establishes a baseline without replacing the forced startup LED queue', () => {
@@ -75,8 +76,21 @@ test('bass, root, and top markers use distinct key-relative positions', () => {
   assert.match(source, /marker\.position === 'center'[\s\S]{0,120}Math\.floor\(key\.width \/ 2\)[\s\S]{0,160}marker\.position === 'right'[\s\S]{0,120}key\.width/);
 });
 
-test('played roots refresh candidates before revoicing held right pads', () => {
-  assert.match(source, /function handleLeftPad\(index, pressed, velocity\)[\s\S]{0,900}refreshCandidates\(\);\s*revoiceHeldRightPads\(\);/);
+test('step presses store a held right snapshot without requiring Shift', () => {
+  assert.match(source, /releaseCandidate,\s*resolveStepPress/);
+  const stepBody = source.match(/function handleStep\(index, pressed, velocity\) \{([\s\S]*?)\n\}/)?.[1] ?? '';
+  assert.match(stepBody, /resolveStepPress\(state, \{[\s\S]*?slotIndex: index[\s\S]*?shiftHeld[\s\S]*?deleteHeld[\s\S]*?lastAuditioned/);
+  assert.match(stepBody, /decision\.action === 'store'[\s\S]*?storeChordAt\(index, decision\.chord\)/);
+  assert.match(stepBody, /decision\.action === 'clear'[\s\S]*?storeChordAt\(index, null\)/);
+  assert.match(stepBody, /decision\.action === 'preview'/);
+  assert.match(stepBody, /decision\.action !== 'gap-fill'/);
+  assert.doesNotMatch(stepBody, /shiftHeld && selected/);
+});
+
+test('left-pad revoice stays separate from step store gestures', () => {
+  const leftBody = source.match(/function handleLeftPad\(index, pressed, velocity\) \{([\s\S]*?)\n\}/)?.[1] ?? '';
+  assert.match(leftBody, /refreshCandidates\(\);\s*revoiceHeldRightPads\(\);/);
+  assert.doesNotMatch(leftBody, /resolveStepPress|storeChordAt|handleStep/);
   const updateBody = source.match(/function updateCandidatesAndSlots\(transposeSlots\) \{([\s\S]*?)\n\}/)?.[1] || '';
   assert.doesNotMatch(updateBody, /revoiceHeldRightPads/);
 });
@@ -94,7 +108,7 @@ test('right-pad velocity and held intent clear on release and lifecycle cleanup'
 });
 
 test('preview and progression routing both expose Schwung', () => {
-  assert.match(source, /rightPadIndex, PREVIEW_ROUTES, ROUTES, takeLedBatch/);
+  assert.match(source, /PREVIEW_ROUTES, ROUTES, takeLedBatch/);
   assert.match(source, /menuCursor === 1[\s\S]{0,180}ROUTES[\s\S]{0,220}menuCursor === 2[\s\S]{0,180}PREVIEW_ROUTES/);
 });
 
@@ -115,4 +129,63 @@ test('all sounding piano keys fill solid while idle black keys remain outlined',
 test('DSP configuration reports whether active native injection is supported', () => {
   assert.match(source, /hostSupportsActiveMoveInject\(globalThis\)/);
   assert.match(source, /function configureDsp\(\)[\s\S]{0,300}move_available: moveAvailable \? 1 : 0/);
+});
+
+test('parameter overlays stay visible longer and knobs require encoder detents', () => {
+  assert.match(source, /function showOverlay\(text, ticks = OVERLAY_TICKS\)/);
+  assert.match(source, /encoderDetent\(encoderAccum\[index\], delta, ENCODER_DETENT_GEAR\)/);
+  assert.doesNotMatch(source, /function showOverlay\(text, ticks = 75\)/);
+});
+
+test('menu export writes Impressive Chords presets without replacing TEST OUTPUT', () => {
+  assert.match(source, /'TEST OUTPUT', 'EXPORT CHORDS'/);
+  assert.match(source, /menuCursor === 4[\s\S]{0,80}op: 'output_test'/);
+  assert.match(source, /menuCursor === 5[\s\S]{0,80}exportProgression\(\)/);
+  assert.match(source, /writeChordsToDir\(IMPRESSIVE_CHORDS_PRESETS_DIR, `\$\{names\.base\}\.chords`/);
+  assert.match(source, /writeChordsToDir\(IMPRESSIVE_CHORDS_SOURCES_DIR, `\$\{names\.base\}\.json`/);
+});
+
+test('export detects Impressive Chords and names each export uniquely', () => {
+  assert.match(source, /host_file_exists/);
+  assert.match(source, /`\$\{IMPRESSIVE_CHORDS_DIR\}\/module\.json`/);
+  assert.match(source, /nextExportName\(/);
+  assert.match(source, /formatImpressiveChordsFile\(names\.label,/);
+  assert.doesNotMatch(source, /IMPRESSIVE_CHORDS_PRESETS_CHORDS_DIR/);
+  assert.doesNotMatch(source, /writeChordsToDir\(CHORD_FINDER_DIR,/);
+});
+
+test('MIDI export writes real bytes through host_system_cmd, not host_write_file', () => {
+  assert.match(source, /midiWriteCommand\(/);
+  assert.match(source, /host_system_cmd/);
+  assert.doesNotMatch(source, /bytesToHostString/);
+});
+
+test('export overlays fit the 21-character display line', () => {
+  assert.match(source, /closeMenuWithOverlay\(\s*'EXPORTED-SCAN PRESETS'/);
+  const overlays = [...source.matchAll(/closeMenuWithOverlay\(\s*(?:icInstalled \? )?'([^']*)'/g)].map((m) => m[1]);
+  assert.ok(overlays.length >= 4);
+  for (const text of overlays) {
+    assert.ok(text.length <= 21, `overlay too long for display: ${text}`);
+  }
+});
+
+test('main screen right-aligns the roman numeral on the chord line', () => {
+  assert.match(source, /const numeral = overlayText \? '' : chordNumeral\(displayChord\);/);
+  assert.match(source, /print\(128 - 6 \* numeral\.length, 10, numeral, 1\);/);
+  assert.doesNotMatch(source, /function romanNumeral\(/);
+});
+
+test('Shift plus jog click toggles the theory view outside the menu', () => {
+  assert.match(source, /let theoryView = false;/);
+  assert.match(source, /if \(!menuOpen\) \{\s*if \(shiftHeld\) \{\s*theoryView = !theoryView;/);
+  assert.match(source, /if \(menuOpen\) drawMenu\(\);\s*else if \(theoryView\) drawTheory\(\);\s*else drawMain\(\);/);
+});
+
+test('theory view teaches spelling, intervals, function, and progression numerals', () => {
+  const theoryBody = source.match(/function drawTheory\(\) \{([\s\S]*?)\n\}/)?.[1] ?? '';
+  assert.match(theoryBody, /spellPitchClass\(/);
+  assert.match(theoryBody, /intervalDegreeLabels\(getChordIntervals\(/);
+  assert.match(theoryBody, /harmonicFunctionInfo\(/);
+  assert.match(theoryBody, /progressionNumeralRows\(state\.progression\)/);
+  assert.match(theoryBody, /loopStep/);
 });

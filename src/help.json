@@ -34,6 +34,25 @@
       ]
     },
     {
+      "title": "Theory View",
+      "lines": [
+        "Shift + jog click",
+        "swaps the piano for",
+        "a theory card:",
+        "chord tones,",
+        "intervals, harmonic",
+        "function, and your",
+        "eight steps as",
+        "roman numerals.",
+        "The playing step is",
+        "highlighted.",
+        "",
+        "Shift + jog click",
+        "again returns to",
+        "the piano."
+      ]
+    },
+    {
       "title": "Piano Display",
       "lines": [
         "The lower display",
@@ -68,8 +87,10 @@
     {
       "title": "Progression",
       "lines": [
+        "Hold right + Step",
+        "stores that chord.",
         "Shift + Step stores",
-        "the last chord.",
+        "held or last chord.",
         "",
         "Delete + Step clears.",
         "Capture toggles",
@@ -109,6 +130,17 @@
         "gate settings.",
         "TEST OUTPUT sends a",
         "short C major chord.",
+        "EXPORT CHORDS adds a",
+        "new Impressive",
+        "Chords preset named",
+        "by key and scale.",
+        "Turn Scan Presets on",
+        "there to load it.",
+        "It also saves a .mid",
+        "file with the same",
+        "name in this",
+        "module's exports",
+        "folder.",
         "",
         "MOVE/USB-C injects",
         "into a Move track.",

@@ -4,22 +4,36 @@ import assert from 'node:assert/strict';
 import {
   appendProgressionChord,
   assignProgressionSlot,
+  chordNumeral,
   clearHeldCandidates,
+  harmonicFunctionInfo,
+  intervalDegreeLabels,
+  progressionNumeralRows,
   createUiState,
+  encoderDetent,
+  ENCODER_DETENT_GEAR,
+  formatImpressiveChordsFile,
+  formatImpressiveChordsJson,
+  formatMidiFile,
+  latestHeldCandidate,
   leftPadIndex,
+  midiWriteCommand,
+  nextExportName,
   migrateSettings,
   nextExplorationMode,
+  packedProgressionChords,
   pressCandidate,
   progressionLength,
   progressionNeighbors,
   PREVIEW_ROUTES,
   ROUTES,
+  resolveStepPress,
   revoiceHeldCandidates,
   releaseCandidate,
   rightPadIndex,
   takeLedBatch,
   hostSupportsActiveMoveInject,
-} from '../src/ui_state_v7.mjs';
+} from '../src/ui_state_v9.mjs';
 
 const chord = Object.freeze({
   tonicOffset: 0,
@@ -96,6 +110,153 @@ test('clears every held snapshot and physical pad intent after panic cleanup', (
 
   assert.deepEqual(state.heldCandidates, Array(16).fill(null));
   assert.deepEqual(state.heldRight, Array(16).fill(false));
+  assert.deepEqual(state.heldRightOrder, []);
+});
+
+test('prefers the most recently pressed held right pad as the store snapshot', () => {
+  const state = createUiState();
+  const older = { ...chord, notes: [60, 64, 67], label: 'C', quality: 'major' };
+  const newer = { ...chord, tonicOffset: 7, notes: [67, 71, 74], label: 'G', quality: 'major' };
+  pressCandidate(state, 2, older);
+  pressCandidate(state, 5, newer);
+
+  assert.equal(latestHeldCandidate(state).label, 'G');
+  assert.deepEqual(latestHeldCandidate(state).notes, [67, 71, 74]);
+
+  releaseCandidate(state, 5);
+  assert.equal(latestHeldCandidate(state).label, 'C');
+});
+
+test('stores the press-time snapshot even after live candidates refresh', () => {
+  const state = createUiState();
+  const played = { ...chord, notes: [60, 64, 67], label: 'C', score: 9 };
+  pressCandidate(state, 4, played);
+  state.candidates[4] = { ...chord, tonicOffset: 9, notes: [69, 72, 76], label: 'Am' };
+
+  const decision = resolveStepPress(state, { slotIndex: 0 });
+
+  assert.equal(decision.action, 'store');
+  assert.deepEqual(decision.chord.notes, [60, 64, 67]);
+  assert.equal(decision.chord.label, 'C');
+  assert.notEqual(decision.chord, state.candidates[4]);
+});
+
+test('hold-right then step stores into empty and populated slots like Shift+Step', () => {
+  const state = createUiState();
+  const held = { ...chord, notes: [60, 64, 67], label: 'C' };
+  const last = { ...chord, tonicOffset: 2, notes: [62, 65, 69], label: 'Dm' };
+  pressCandidate(state, 1, held);
+  assignProgressionSlot(state, 3, { ...chord, tonicOffset: 7, quality: 'major' });
+
+  assert.equal(resolveStepPress(state, { slotIndex: 0 }).action, 'store');
+  assert.equal(resolveStepPress(state, { slotIndex: 0 }).chord.label, 'C');
+  assert.equal(resolveStepPress(state, { slotIndex: 3 }).action, 'store');
+  assert.equal(resolveStepPress(state, { slotIndex: 3 }).chord.label, 'C');
+
+  const shiftEmpty = resolveStepPress(state, { slotIndex: 0, shiftHeld: true, lastAuditioned: last });
+  const shiftPopulated = resolveStepPress(state, { slotIndex: 3, shiftHeld: true, lastAuditioned: last });
+  assert.equal(shiftEmpty.action, 'store');
+  assert.equal(shiftEmpty.chord.label, 'C');
+  assert.equal(shiftPopulated.action, 'store');
+  assert.equal(shiftPopulated.chord.label, 'C');
+});
+
+test('Shift+Step stores the last auditioned chord when no right pad is held', () => {
+  const state = createUiState();
+  const last = { ...chord, notes: [65, 69, 72], label: 'F' };
+
+  const stored = resolveStepPress(state, { slotIndex: 2, shiftHeld: true, lastAuditioned: last });
+  assert.equal(stored.action, 'store');
+  assert.equal(stored.chord, last);
+
+  const missing = resolveStepPress(state, { slotIndex: 2, shiftHeld: true });
+  assert.equal(missing.action, 'need-audition');
+});
+
+test('step without a held right pad still previews or gap-fills', () => {
+  const state = createUiState();
+  assignProgressionSlot(state, 1, chord);
+
+  const preview = resolveStepPress(state, { slotIndex: 1, lastAuditioned: { ...chord, label: 'ignored' } });
+  assert.equal(preview.action, 'preview');
+  assert.equal(preview.chord.tonicOffset, 0);
+  assert.equal('notes' in preview.chord, false);
+
+  const gap = resolveStepPress(state, { slotIndex: 2 });
+  assert.equal(gap.action, 'gap-fill');
+});
+
+test('Delete+Step clears even while a right pad is held', () => {
+  const state = createUiState();
+  pressCandidate(state, 0, { ...chord, notes: [60, 64, 67], label: 'C' });
+  assignProgressionSlot(state, 4, chord);
+
+  const held = resolveStepPress(state, { slotIndex: 4, deleteHeld: true });
+  const empty = resolveStepPress(state, { slotIndex: 0, deleteHeld: true, shiftHeld: true });
+  assert.equal(held.action, 'clear');
+  assert.equal(empty.action, 'clear');
+});
+
+test('left-pad revoice updates the held snapshot without storing a slot', () => {
+  const state = createUiState();
+  pressCandidate(state, 2, { ...chord, notes: [60, 64, 67], label: 'C' });
+  const candidates = Array(16).fill(null);
+  candidates[2] = { ...chord, tonicOffset: 7, notes: [67, 71, 74], label: 'G' };
+
+  revoiceHeldCandidates(state, candidates);
+  const decision = resolveStepPress(state, { slotIndex: 0 });
+
+  assert.deepEqual(state.progression, Array(8).fill(null));
+  assert.equal(decision.action, 'store');
+  assert.deepEqual(decision.chord.notes, [67, 71, 74]);
+  assert.equal(decision.chord.label, 'G');
+});
+
+test('a silent held pad does not store and falls back to an earlier sounding chord', () => {
+  const state = createUiState();
+  pressCandidate(state, 2, { ...chord, notes: [60, 64, 67], label: 'C' });
+  pressCandidate(state, 5, { ...chord, tonicOffset: 7, notes: [67, 71, 74], label: 'G' });
+  const candidates = Array(16).fill(null);
+  candidates[2] = { ...chord, notes: [60, 64, 67], label: 'C' };
+
+  revoiceHeldCandidates(state, candidates);
+
+  assert.equal(state.heldRight[5], true);
+  assert.equal(state.heldCandidates[5], null);
+  assert.equal(latestHeldCandidate(state).label, 'C');
+  assert.equal(resolveStepPress(state, { slotIndex: 0 }).chord.label, 'C');
+
+  revoiceHeldCandidates(state, Array(16).fill(null));
+  assert.equal(latestHeldCandidate(state), null);
+  assert.equal(resolveStepPress(state, { slotIndex: 0 }).action, 'ignore');
+  assert.equal(resolveStepPress(state, { slotIndex: 1, lastAuditioned: chord }).action, 'ignore');
+});
+
+test('stored slots keep semantic chord data rather than frozen MIDI notes', () => {
+  const state = createUiState();
+  const snapshot = pressCandidate(state, 3, {
+    ...chord,
+    notes: [60, 64, 67],
+    label: 'C',
+    score: 12,
+    registerShift: 1,
+  });
+  const decision = resolveStepPress(state, { slotIndex: 6 });
+  assignProgressionSlot(state, 6, decision.chord);
+
+  assert.equal(decision.chord, snapshot);
+  assert.deepEqual(state.progression[6], {
+    tonicOffset: 0,
+    scaleDegree: 0,
+    quality: 'major',
+    extensions: [],
+    inversion: 0,
+    spread: 0,
+    sourceClass: 'diatonic',
+    registerShift: 1,
+  });
+  assert.equal('notes' in state.progression[6], false);
+  assert.equal('label' in state.progression[6], false);
 });
 
 test('assigns and appends without overwriting a full progression', () => {
@@ -191,4 +352,145 @@ test('drains no more than eight LED updates per tick', () => {
   assert.equal(queue.length, 12);
   assert.equal(takeLedBatch(queue).length, 8);
   assert.equal(takeLedBatch(queue).length, 4);
+});
+
+test('encoder detents require two ticks before a parameter steps', () => {
+  assert.equal(ENCODER_DETENT_GEAR, 2);
+  assert.deepEqual(encoderDetent(0, 1), { accumulator: 1, step: 0 });
+  assert.deepEqual(encoderDetent(1, 1), { accumulator: 0, step: 1 });
+  assert.deepEqual(encoderDetent(0, -1), { accumulator: -1, step: 0 });
+  assert.deepEqual(encoderDetent(-1, -1), { accumulator: 0, step: -1 });
+  assert.deepEqual(encoderDetent(0, 0), { accumulator: 0, step: 0 });
+});
+
+test('packs populated progression slots into an Impressive Chords preset file', () => {
+  const progression = Array(8).fill(null);
+  progression[1] = { ...chord, tonicOffset: 0 };
+  progression[4] = { ...chord, tonicOffset: 7 };
+  const packed = packedProgressionChords(progression, (item) => (
+    item.tonicOffset === 0 ? [60, 64, 67] : [67, 71, 74]
+  ));
+
+  assert.deepEqual(packed, [
+    { index: 0, notes: [60, 64, 67] },
+    { index: 1, notes: [67, 71, 74] },
+  ]);
+  assert.equal(
+    formatImpressiveChordsFile('Chord Finder C Major', packed),
+    'Name: Chord Finder C Major\n0: 60,64,67\n1: 67,71,74\n',
+  );
+  assert.equal(
+    JSON.parse(formatImpressiveChordsJson(packed))['0'].join(','),
+    '60,64,67',
+  );
+});
+
+test('MIDI export writes a type 0 file with one event block per packed chord', () => {
+  const packed = [
+    { index: 0, notes: [60, 64, 67] },
+    { index: 1, notes: [65, 69, 72] },
+  ];
+  const bytes = formatMidiFile(packed, { ticksPerBeat: 96, beatsPerChord: 1, gate: 50 });
+  const ascii = (start, end) => String.fromCharCode(...bytes.slice(start, end));
+
+  assert.equal(ascii(0, 4), 'MThd');
+  assert.equal(ascii(14, 18), 'MTrk');
+  assert.equal(bytes[8], 0x00);
+  assert.equal(bytes[9], 0x00);
+  assert.equal(bytes.includes(0x90), true);
+  assert.equal(bytes.includes(60), true);
+  assert.equal(bytes.includes(65), true);
+  assert.equal(bytes[bytes.length - 3], 0xff);
+  assert.equal(bytes[bytes.length - 2], 0x2f);
+  assert.equal(bytes[bytes.length - 1], 0x00);
+});
+
+test('each export gets a unique name that survives an Impressive Chords rescan', () => {
+  // Impressive Chords regenerates preset names from the source filename via
+  // Python str.title(), so label must equal title-cased base.
+  assert.deepEqual(nextExportName('A', 'Lydian', () => false), {
+    base: 'chord_finder_a_lydian',
+    label: 'Chord Finder A Lydian',
+  });
+  assert.deepEqual(nextExportName('Db', 'Natural Minor', () => false), {
+    base: 'chord_finder_db_natural_minor',
+    label: 'Chord Finder Db Natural Minor',
+  });
+
+  const taken = new Set(['chord_finder_a_lydian', 'chord_finder_a_lydian_2']);
+  assert.deepEqual(nextExportName('A', 'Lydian', (base) => taken.has(base)), {
+    base: 'chord_finder_a_lydian_3',
+    label: 'Chord Finder A Lydian 3',
+  });
+});
+
+test('MIDI write command carries exact bytes through allowlisted sh printf', () => {
+  const bytes = Uint8Array.from([0x4d, 0x54, 0x68, 0x64, 0x00, 0x01, 0x90, 0x3c, 0xff]);
+  const command = midiWriteCommand('/data/UserData/schwung/modules/tools/chord-finder/exports/chord_finder.mid', bytes);
+
+  assert.equal(command.startsWith('sh -c "printf \''), true);
+  assert.equal(
+    command.endsWith(' > /data/UserData/schwung/modules/tools/chord-finder/exports/chord_finder.mid"'),
+    true,
+  );
+
+  const format = command.match(/printf '((?:\\[0-7]{3})+)'/)?.[1];
+  assert.ok(format, 'printf format must be made only of 3-digit octal escapes');
+  const decoded = format.match(/\\[0-7]{3}/g).map((escape) => parseInt(escape.slice(1), 8));
+  assert.deepEqual(decoded, [...bytes]);
+});
+
+test('interval degrees label chord construction for the theory view', () => {
+  assert.deepEqual(intervalDegreeLabels([0, 4, 7, 11]), ['1', '3', '5', '7']);
+  assert.deepEqual(intervalDegreeLabels([0, 3, 6, 10]), ['1', 'b3', 'b5', 'b7']);
+  assert.deepEqual(intervalDegreeLabels([0, 4, 8]), ['1', '3', '#5']);
+  assert.deepEqual(intervalDegreeLabels([0, 4, 7, 10, 14, 17]), ['1', '3', '5', 'b7', '9', '11']);
+  assert.deepEqual(intervalDegreeLabels([0, 2, 7]), ['1', '2', '5']);
+});
+
+test('chord numerals cover diatonic, secondary, and borrowed harmony', () => {
+  assert.equal(chordNumeral({ ...chord, scaleDegree: 4 }), 'V');
+  assert.equal(chordNumeral({ ...chord, scaleDegree: 1, quality: 'minor' }), 'ii');
+  assert.equal(chordNumeral({ ...chord, scaleDegree: 6, quality: 'diminished' }), 'viio');
+  assert.equal(
+    chordNumeral({ ...chord, scaleDegree: -1, sourceClass: 'secondary', targetDegree: 3 }),
+    'V/IV',
+  );
+  assert.equal(
+    chordNumeral({ ...chord, scaleDegree: -1, sourceClass: 'borrowed', tonicOffset: 10 }),
+    'bVII',
+  );
+  assert.equal(
+    chordNumeral({ ...chord, scaleDegree: -1, sourceClass: 'borrowed', tonicOffset: 8, quality: 'minor' }),
+    'bvi',
+  );
+  assert.equal(chordNumeral(null), '');
+});
+
+test('harmonic function explains each chord role and where dominants resolve', () => {
+  assert.deepEqual(harmonicFunctionInfo({ ...chord, scaleDegree: 0 }), { label: 'TONIC', resolvesTo: '' });
+  assert.deepEqual(harmonicFunctionInfo({ ...chord, scaleDegree: 3 }), { label: 'SUBDOM', resolvesTo: '' });
+  assert.deepEqual(harmonicFunctionInfo({ ...chord, scaleDegree: 4 }), { label: 'DOM', resolvesTo: 'I' });
+  assert.deepEqual(
+    harmonicFunctionInfo({ ...chord, scaleDegree: -1, sourceClass: 'secondary', targetDegree: 4 }),
+    { label: 'SEC DOM', resolvesTo: 'V' },
+  );
+  assert.deepEqual(
+    harmonicFunctionInfo({ ...chord, scaleDegree: -1, sourceClass: 'borrowed', tonicOffset: 10 }),
+    { label: 'BORROWED', resolvesTo: '' },
+  );
+  assert.deepEqual(harmonicFunctionInfo(null), { label: '', resolvesTo: '' });
+});
+
+test('progression numerals render as two rows of four with rests as dashes', () => {
+  const progression = Array(8).fill(null);
+  progression[0] = { ...chord, scaleDegree: 0 };
+  progression[1] = { ...chord, scaleDegree: 5, quality: 'minor' };
+  progression[4] = { ...chord, scaleDegree: 4 };
+  progression[7] = { ...chord, scaleDegree: -1, sourceClass: 'secondary', targetDegree: 3 };
+
+  assert.deepEqual(progressionNumeralRows(progression), [
+    ['I', 'vi', '--', '--'],
+    ['V', '--', '--', 'V/IV'],
+  ]);
 });

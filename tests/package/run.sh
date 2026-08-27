@@ -18,7 +18,7 @@ node -e '
   if (!manifest.capabilities || manifest.capabilities.suspend_keeps_js !== true) throw new Error("must suspend with JS");
   if (!manifest.capabilities.button_passthrough.includes(85) || !manifest.capabilities.button_passthrough.includes(86)) throw new Error("transport passthrough missing");
   const helpText = help.children.flatMap(section => section.lines).join(" ");
-  for (const phrase of ["ROOT, NEXT, VOICE", "Shift + Step", "TEST OUTPUT", "Shift + left pad", "Hold a right chord", "next slot"]) {
+  for (const phrase of ["ROOT, NEXT, VOICE", "Shift + Step", "Hold right + Step", "TEST OUTPUT", "EXPORT CHORDS", "Impressive Chords", "Shift + left pad", "Hold a right chord", "next slot"]) {
     if (!helpText.includes(phrase)) throw new Error(`help missing ${phrase}`);
   }
 '
@@ -26,7 +26,7 @@ node -e '
 test -f src/ui.js
 test -f src/harmony.mjs
 test -f src/keyboard_v2.mjs
-test -f src/ui_state_v7.mjs
+test -f src/ui_state_v9.mjs
 test -f src/dsp/chord_finder.c
 test -f src/install_swap.c
 test -f src/help.json
@@ -37,6 +37,7 @@ node --check src/ui.js
 sh -n scripts/build.sh scripts/build-dsp.sh scripts/package.sh scripts/install.sh scripts/verify-package.sh
 
 grep -q 'settings.json' scripts/install.sh
+grep -q 'remote/exports' scripts/install.sh
 grep -q 'chord-finder.install' scripts/install.sh
 grep -q 'trap rollback' scripts/install.sh
 grep -q 'install-swap' scripts/install.sh
@@ -45,7 +46,7 @@ grep -q 'ARM aarch64' scripts/build-dsp.sh
 grep -q 'ARM aarch64' scripts/package.sh
 grep -Fq -- '--user "$(id -u):$(id -g)"' scripts/build.sh
 grep -q 'keyboard_v2.mjs' scripts/package.sh
-grep -q 'ui_state_v7.mjs' scripts/package.sh
+grep -q 'ui_state_v9.mjs' scripts/package.sh
 grep -q 'verify-package.sh' scripts/package.sh
 
 if [ -f dist/chord-finder-module.tar.gz ]; then

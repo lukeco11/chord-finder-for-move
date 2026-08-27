@@ -13,6 +13,26 @@ Chord Finder is an independent module for
 [Schwung](https://github.com/charlesvestal/schwung). It is not made or
 supported by Ableton.
 
+## What's new in 0.5.0
+
+- **Theory view.** Hold Shift and click the main jog wheel to swap the piano
+  for a theory card: the chord's spelled tones, its interval construction,
+  its harmonic function and resolution tendency, and your eight progression
+  slots as roman numerals with the playing step highlighted.
+- **Roman numerals everywhere.** The chord line now shows the current chord's
+  roman numeral in the key, including secondary dominants (`V/IV`) and
+  borrowed chords (`bVII`).
+- **Export Chords.** The Menu can export the stored progression as an
+  [Impressive Chords](https://github.com/mestela/schwung-impressive-chords)
+  preset and a standard MIDI file. Every export gets its own preset named
+  after the key and scale, so exports accumulate and stay selectable.
+- **Store chords with one hand.** Hold a right-pad chord and press a Step
+  button to store it, in addition to Shift + Step.
+- **Calmer controls.** Parameter knobs need two encoder ticks per step, and
+  parameter overlays stay on screen twice as long.
+- **Exports survive updates.** The module's `exports` folder is preserved
+  when Chord Finder is updated.
+
 ## Who it is for
 
 Chord Finder is useful if you:
@@ -88,7 +108,23 @@ For a Move instrument:
 For an external instrument, connect it to Move's USB-A port, set **Preview
 Route** to `USB-A`, and match the MIDI channels. Choose `BOTH` to send the same
 notes to both destinations. The **Test Output** item in Menu plays a short test
-chord and is useful when checking routing.
+chord and is useful when checking routing. **Export Chords** saves the stored
+progression to two places:
+
+- A new preset for
+  [Impressive Chords](https://github.com/mestela/schwung-impressive-chords),
+  named after the current key and scale (for example **Chord Finder A
+  Lydian**, then **Chord Finder A Lydian 2** for a repeat), at
+  `modules/midi_fx/impressive-chords/presets/chord_finder_<key>_<scale>.chords`.
+  Every export appears as its own entry in the Impressive Chords preset list.
+  Impressive Chords only reads presets when it starts or rescans, so turn its
+  **Scan Presets** knob to `1` (or re-add the module to a chain) to load new
+  exports.
+- A standard MIDI file plus the same `.chords` text at
+  `modules/tools/chord-finder/exports/chord_finder_<key>_<scale>.mid` and
+  `.chords` (under `/data/UserData/schwung/` on the Move). Copy them off the
+  device with `scp`, for example:
+  `scp ableton@move.local:/data/UserData/schwung/modules/tools/chord-finder/exports/chord_finder_a_lydian.mid .`
 
 To audition through a synth loaded in Schwung's signal chain, set **Preview
 Route** to `SCHWUNG` and match the Chord Finder MIDI channel to the chain
@@ -119,10 +155,21 @@ Press the main jog wheel to cycle through three views:
 Hold **Shift** and press a left pad to require that pitch as the top note of
 the suggested chords. Press it the same way again to remove the constraint.
 
+Hold **Shift** and click the main jog wheel to toggle the **Theory view**. It
+replaces the piano with a theory card for the sounding chord: its spelled
+tones (for example `A C# E G#`), its interval construction (`1 3 5 7`), its
+harmonic function and where it tends to resolve (`DOM>I`, `SEC DOM>V`), and
+your eight progression slots as roman numerals in two rows of four. During
+playback the active step is highlighted, so you can watch the analysis move
+through your progression. The chord name line also shows the roman numeral of
+the current chord on both views.
+
 ## Build a progression
 
 There are eight progression slots, shown on Step buttons 1-8.
 
+- Hold a right-pad chord and press **Step 1-8** to store it in that slot. You
+  can overwrite a populated slot this way.
 - Hold a chord, then press **Shift + Step 1-8** to store it in that slot. You
   can also store the last chord you auditioned.
 - Press a populated Step button to preview its chord.
@@ -151,18 +198,19 @@ key or octave transposes the saved progression.
 
 | Control | What it does |
 | --- | --- |
-| Encoders 1-8 | Key, Scale, Color, Extension, Inversion, Spread, Strum, Rate |
+| Encoders 1-8 | Key, Scale, Color, Extension, Inversion, Spread, Strum, Rate (two ticks per step) |
 | Up / Down | Move the playable range by octaves |
 | Main jog click | Cycle ROOT, NEXT, and VOICE modes |
+| Shift + jog click | Toggle the Theory view (chord tones, intervals, function, progression numerals) |
 | Shift + left pad | Set or clear a required top note |
-| Step 1-8 | Preview a stored chord or select an empty gap |
-| Shift + Step | Store the held or last chord |
+| Step 1-8 | Store a held right-pad chord, or preview / fill a gap |
+| Shift + Step | Store the held or last-auditioned chord |
 | Delete + Step | Clear a progression slot |
 | Capture | Toggle append recording |
 | Play | Arm the progression and start or stop Move transport |
 | Back | Park Chord Finder while its armed progression follows Move |
 | Shift + Back | Fully exit, disarm, and stop Chord Finder |
-| Menu | MIDI channel, output routes, gate, and output test |
+| Menu | MIDI channel, output routes, gate, output test, and Impressive Chords export |
 
 ## Record MIDI in a DAW
 

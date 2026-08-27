@@ -35,6 +35,9 @@ tar -xzf "$archive" -C "$stage" --strip-components=1
 if [ -f "$remote/settings.json" ]; then
   cp "$remote/settings.json" "$stage/settings.json"
 fi
+if [ -d "$remote/exports" ]; then
+  cp -r "$remote/exports" "$stage/exports"
+fi
 chown -R ableton:users "$stage"
 
 if [ -d "$remote" ]; then

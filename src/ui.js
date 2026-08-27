@@ -12,18 +12,24 @@ import {
 import { announce, announceMenuItem } from '/data/UserData/schwung/shared/screen_reader.mjs';
 
 import {
-  SCALES, buildChordNotes, generateCandidates, getScale, leftPadNote, nameChord,
+  SCALES, buildChordNotes, generateCandidates, getChordIntervals, getScale, leftPadNote,
+  nameChord, spellPitchClass,
 } from './harmony.mjs';
 import {
   clearDisplayVoices, createDisplayVoiceState, keyboardState, startDisplayVoice,
   stopDisplayVoice,
 } from './keyboard_v2.mjs';
 import {
-  appendProgressionChord, assignProgressionSlot, clearHeldCandidates, createUiState,
-  leftPadIndex, migrateSettings, nextExplorationMode, pressCandidate,
-  progressionLength, progressionNeighbors, releaseCandidate, revoiceHeldCandidates,
+  appendProgressionChord, assignProgressionSlot, chordNumeral, clearHeldCandidates,
+  createUiState, encoderDetent, formatImpressiveChordsFile, formatImpressiveChordsJson,
+  formatMidiFile, harmonicFunctionInfo, intervalDegreeLabels, leftPadIndex,
+  midiWriteCommand, migrateSettings, nextExplorationMode, nextExportName,
+  packedProgressionChords, pressCandidate, progressionLength, progressionNeighbors,
+  progressionNumeralRows, releaseCandidate, resolveStepPress, revoiceHeldCandidates,
   rightPadIndex, PREVIEW_ROUTES, ROUTES, takeLedBatch, hostSupportsActiveMoveInject,
-} from './ui_state_v7.mjs';
+  CHORD_FINDER_EXPORTS_DIR, ENCODER_DETENT_GEAR, IMPRESSIVE_CHORDS_DIR,
+  IMPRESSIVE_CHORDS_PRESETS_DIR, IMPRESSIVE_CHORDS_SOURCES_DIR, OVERLAY_TICKS,
+} from './ui_state_v9.mjs';
 
 const SETTINGS_PATH = '/data/UserData/schwung/modules/tools/chord-finder/settings.json';
 const ROUTE_LABELS = { move: 'MOVE/USB-C', external: 'USB-A', both: 'BOTH', schwung: 'SCHWUNG' };
@@ -33,7 +39,7 @@ const RATE_LABELS = ['1/16', '1/8', '1/4', '1/2', '1 BAR'];
 const RATE_SHORT_LABELS = ['16', '8', '4', '2', '1B'];
 const DIATONIC_COLORS = [BrightGreen, ForestGreen, DullGreen];
 const COLOR_COLORS = [VividYellow, Ochre, BurntOrange];
-const MENU_ITEMS = ['MIDI CHANNEL', 'OUTPUT ROUTE', 'PREVIEW ROUTE', 'GLOBAL GATE', 'TEST OUTPUT'];
+const MENU_ITEMS = ['MIDI CHANNEL', 'OUTPUT ROUTE', 'PREVIEW ROUTE', 'GLOBAL GATE', 'TEST OUTPUT', 'EXPORT CHORDS'];
 const KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 const MODE_LABELS = { root: 'ROOT', next: 'NEXT', voice: 'VOICE' };
 const PARAMETER_LABELS = ['KEY', 'SCALE', 'COLOR', 'EXT', 'INV', 'SPREAD', 'STRUM', 'STEP'];
@@ -65,6 +71,7 @@ let deleteHeld = false;
 let shiftHeld = false;
 let captureArmed = false;
 let menuOpen = false;
+let theoryView = false;
 let menuCursor = 0;
 let menuEditing = false;
 let saveCountdown = -1;
@@ -72,6 +79,8 @@ let pollCountdown = 1;
 let dirty = true;
 let heldLeft = Array(16).fill(false);
 let heldRightVelocity = Array(16).fill(100);
+let encoderAccum = Array(8).fill(0);
+let exportStatus = 'PRESS';
 let commandSequence = 0;
 let commandQueue = [];
 let liveOwners = new Set();
@@ -181,12 +190,90 @@ function scheduleSave() {
 }
 
 function saveSettings() {
-  if (typeof host_write_file !== 'function') return;
-  if (host_write_file(SETTINGS_PATH, JSON.stringify(clonePersistedSettings())) === true) {
+  if (writeHostFile(SETTINGS_PATH, JSON.stringify(clonePersistedSettings()))) {
     saveCountdown = -1;
   } else {
     saveCountdown = 90;
   }
+}
+
+function writeHostFile(path, content) {
+  return typeof host_write_file === 'function' && host_write_file(path, content) === true;
+}
+
+function ensureHostDir(path) {
+  return typeof host_ensure_dir === 'function' && host_ensure_dir(path) === true;
+}
+
+function writeChordsToDir(dir, filename, content) {
+  ensureHostDir(dir);
+  return writeHostFile(`${dir}/${filename}`, content);
+}
+
+function hostFileExists(path) {
+  return typeof host_file_exists === 'function' && host_file_exists(path) === true;
+}
+
+function writeMidiExport(filename, midiBytes) {
+  if (typeof host_system_cmd !== 'function') return false;
+  ensureHostDir(CHORD_FINDER_EXPORTS_DIR);
+  const command = midiWriteCommand(`${CHORD_FINDER_EXPORTS_DIR}/${filename}`, midiBytes);
+  return host_system_cmd(command) === 0;
+}
+
+function closeMenuWithOverlay(text, spoken) {
+  menuOpen = false;
+  menuEditing = false;
+  showOverlay(text);
+  announce(spoken || text);
+}
+
+function exportProgression() {
+  const chords = packedProgressionChords(state.progression, (chord) => slotNotes(chord));
+  if (!chords.length) {
+    exportStatus = 'EMPTY';
+    closeMenuWithOverlay('NO CHORDS TO EXPORT', 'Store chords in steps first, then export');
+    return;
+  }
+  const names = nextExportName(
+    KEY_NAMES[state.settings.key],
+    getScale(state.settings.scaleId).name,
+    (base) => hostFileExists(`${IMPRESSIVE_CHORDS_PRESETS_DIR}/${base}.chords`)
+      || hostFileExists(`${CHORD_FINDER_EXPORTS_DIR}/${base}.chords`),
+  );
+  const chordsText = formatImpressiveChordsFile(names.label, chords);
+  const chordsJson = formatImpressiveChordsJson(chords);
+  const midiBytes = formatMidiFile(chords, { gate: state.settings.gate, beatsPerChord: 1 });
+  const icInstalled = hostFileExists(`${IMPRESSIVE_CHORDS_DIR}/module.json`);
+  const wrotePreset = icInstalled
+    && writeChordsToDir(IMPRESSIVE_CHORDS_PRESETS_DIR, `${names.base}.chords`, chordsText);
+  if (wrotePreset) writeChordsToDir(IMPRESSIVE_CHORDS_SOURCES_DIR, `${names.base}.json`, chordsJson);
+  const wroteLocal = writeChordsToDir(CHORD_FINDER_EXPORTS_DIR, `${names.base}.chords`, chordsText);
+  const wroteMidi = writeMidiExport(`${names.base}.mid`, midiBytes);
+  const midiSpoken = wroteMidi
+    ? `The MIDI file ${names.base}.mid is in the chord-finder exports folder.`
+    : 'The MIDI file could not be written.';
+
+  if (wrotePreset) {
+    exportStatus = 'SAVED';
+    closeMenuWithOverlay(
+      'EXPORTED-SCAN PRESETS',
+      `Exported ${chords.length} chords as the Impressive Chords preset named ${names.label}. Turn Scan Presets on in Impressive Chords to load it. ${midiSpoken}`,
+    );
+    return;
+  }
+  if (wroteLocal || wroteMidi) {
+    exportStatus = icInstalled ? 'FAIL' : 'NO IC';
+    closeMenuWithOverlay(
+      icInstalled ? 'IC WRITE FAILED' : 'NO IMPRESSIVE CHORDS',
+      icInstalled
+        ? `The Impressive Chords preset folder was not writable. Saved ${names.base}.chords in the chord-finder exports folder instead. ${midiSpoken}`
+        : `Impressive Chords is not installed. Saved ${names.base}.chords in the chord-finder exports folder. ${midiSpoken}`,
+    );
+    return;
+  }
+  exportStatus = 'FAIL';
+  closeMenuWithOverlay('EXPORT FAILED', 'Export failed. No files could be written.');
 }
 
 function loadSettings() {
@@ -225,7 +312,7 @@ function candidateSettings() {
   };
 }
 
-function showOverlay(text, ticks = 75) {
+function showOverlay(text, ticks = OVERLAY_TICKS) {
   overlayText = text;
   overlayCountdown = ticks;
   dirty = true;
@@ -300,6 +387,7 @@ function menuValue(index) {
   if (index === 1) return routeUnavailable(settings.route) ? `${settings.route.toUpperCase()}!` : ROUTE_LABELS[settings.route];
   if (index === 2) return routeUnavailable(settings.previewRoute) ? `${settings.previewRoute.toUpperCase()}!` : ROUTE_LABELS[settings.previewRoute];
   if (index === 3) return String(settings.gate) + '%';
+  if (index === 5) return exportStatus;
   return 'PRESS';
 }
 
@@ -308,21 +396,12 @@ function drawMenu() {
   print(0, 0, 'Chord Finder', 1);
   print(80, 0, 'SETTINGS', 1);
   for (let index = 0; index < MENU_ITEMS.length; index += 1) {
-    const y = 13 + index * 9;
+    const y = 10 + index * 8;
     if (index === menuCursor) fill_rect(0, y - 1, 128, 9, 1);
     print(2, y, truncate(MENU_ITEMS[index], 14), index === menuCursor ? 0 : 1);
     print(91, y, truncate(menuValue(index), 6), index === menuCursor ? 0 : 1);
   }
-  print(0, 58, menuEditing ? 'Turn jog  Click done' : 'Jog + click', 1);
-}
-
-function romanNumeral(chord) {
-  if (!chord || chord.scaleDegree < 0) return '';
-  const numerals = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
-  let numeral = numerals[chord.scaleDegree] || '';
-  if (chord.quality === 'minor' || chord.quality === 'm7b5') numeral = numeral.toLowerCase();
-  if (chord.quality === 'diminished' || chord.quality === 'dim7' || chord.quality === 'm7b5') numeral += 'o';
-  return numeral;
+  print(0, 61, menuEditing ? 'Turn jog  Click done' : 'Jog + click', 1);
 }
 
 function modeContext() {
@@ -400,20 +479,64 @@ function drawMain() {
   clear_screen();
   print(0, 0, truncate(keyName + ' ' + scale.name, 15), 1);
   print(90, 0, truncate(routeStatus + ' C' + (state.settings.channel + 1), 6), 1);
-  print(0, 10, truncate(overlayText || currentLabel, 21), 1);
+  drawChordLine();
   const top = topNotePc === null ? '' : `  TOP ${KEY_NAMES[topNotePc]}`;
   print(0, 20, truncate(modeContext() + top, 21), 1);
-  const category = displayChord && romanNumeral(displayChord)
-    ? `${currentCategory} ${romanNumeral(displayChord)}`
-    : currentCategory;
-  print(0, 30, truncate(category.toUpperCase(), 10), 1);
+  print(0, 30, truncate(currentCategory.toUpperCase(), 10), 1);
   const transport = running ? 'PLAY' : (loopArmed ? 'WAIT' : 'OFF');
   print(62, 30, `O${state.settings.octave} ${RATE_SHORT_LABELS[state.settings.rate]} ${transport}`, 1);
   drawPianoKeyboard();
 }
 
+function drawChordLine() {
+  const numeral = overlayText ? '' : chordNumeral(displayChord);
+  print(0, 10, truncate(overlayText || currentLabel, numeral ? 20 - numeral.length : 21), 1);
+  print(128 - 6 * numeral.length, 10, numeral, 1);
+}
+
+function drawTheory() {
+  const scale = getScale(state.settings.scaleId);
+  const keyName = KEY_NAMES[state.settings.key];
+  const routeStatus = routeUnavailable(state.settings.previewRoute)
+    ? '!M'
+    : ROUTE_SHORT[state.settings.previewRoute];
+  clear_screen();
+  print(0, 0, truncate(keyName + ' ' + scale.name, 15), 1);
+  print(90, 0, truncate(routeStatus + ' C' + (state.settings.channel + 1), 6), 1);
+  drawChordLine();
+  const chord = displayChord || lastAuditioned || currentChord;
+  const tones = [];
+  const seen = new Set();
+  const spelledSource = displayNotes.length ? displayNotes : (chord ? slotNotes(chord) : []);
+  for (const note of spelledSource) {
+    const pitchClass = ((note % 12) + 12) % 12;
+    if (seen.has(pitchClass)) continue;
+    seen.add(pitchClass);
+    tones.push(spellPitchClass(pitchClass, { key: state.settings.key, scaleId: state.settings.scaleId }));
+  }
+  print(0, 20, truncate(tones.join(' '), 21), 1);
+  const info = harmonicFunctionInfo(chord);
+  const functionText = info.resolvesTo ? `${info.label}>${info.resolvesTo}` : info.label;
+  const intervals = chord ? intervalDegreeLabels(getChordIntervals(chord)).join(' ') : '';
+  print(0, 30, truncate(intervals, functionText ? 20 - functionText.length : 21), 1);
+  print(128 - 6 * functionText.length, 30, functionText, 1);
+  const rows = progressionNumeralRows(state.progression);
+  for (let row = 0; row < 2; row += 1) {
+    const y = row === 0 ? 42 : 53;
+    print(0, y, String(row * 4 + 1), 1);
+    for (let column = 0; column < 4; column += 1) {
+      const slot = row * 4 + column;
+      const x = 8 + column * 30;
+      const active = running && loopStep === slot;
+      if (active) fill_rect(x - 1, y - 1, 30, 10, 1);
+      print(x, y, truncate(rows[row][column], 5), active ? 0 : 1);
+    }
+  }
+}
+
 function draw() {
   if (menuOpen) drawMenu();
+  else if (theoryView) drawTheory();
   else drawMain();
   dirty = false;
 }
@@ -611,71 +734,69 @@ function handleRightPad(index, pressed, velocity) {
   }
 }
 
-function heldChord() {
-  for (let index = 0; index < state.heldCandidates.length; index += 1) {
-    if (state.heldCandidates[index]) return state.heldCandidates[index];
-  }
-  return null;
-}
-
 function handleStep(index, pressed, velocity) {
   if (index < 0 || index >= 8) return;
-  if (pressed) {
-    if (deleteHeld) {
-      storeChordAt(index, null);
-      announce('Slot ' + (index + 1) + ' cleared');
-      return;
-    }
-    const chord = heldChord();
-    const selected = chord || lastAuditioned;
-    if (shiftHeld && selected) {
-      storeChordAt(index, selected);
-      announce('Stored ' + selected.label + ' in slot ' + (index + 1));
-      return;
-    }
-    if (shiftHeld) {
-      showOverlay('AUDITION A CHORD FIRST');
-      announce('Audition a chord first');
-      return;
-    }
-    const stored = state.progression[index];
-    if (stored) {
-      const notes = slotNotes(stored);
-      playVoice(40 + index, notes, velocity);
-      lastAuditioned = { ...stored, notes, label: nameChord(stored, { key: state.settings.key, scaleId: state.settings.scaleId }) };
-      currentLabel = lastAuditioned.label;
-      currentCategory = 'PROGRESSION ' + (index + 1);
-      showDisplayVoice(40 + index, {
-        notes,
-        chord: semanticChord(lastAuditioned),
-        rootPitchClass: wrap(state.settings.key + lastAuditioned.tonicOffset, 12),
-        label: currentLabel,
-        category: currentCategory,
-      });
-      selectedSlot = index;
-      commitContext(lastAuditioned);
-      dirty = true;
-    } else {
-      selectedSlot = index;
-      state.settings.mode = 'next';
-      const neighbors = progressionNeighbors(state.progression, index);
-      currentChord = neighbors.previousChord ? semanticChord(neighbors.previousChord) : null;
-      currentNotes = currentChord ? slotNotes(currentChord) : [];
-      if (displayVoices.voices.size === 0) {
-        displayChord = null;
-        displayNotes = [];
-        displayRootPc = null;
-      }
-      currentLabel = `Fill step ${index + 1}`;
-      currentCategory = neighbors.nextChord ? 'BETWEEN CHORDS' : 'NEXT CHORD';
-      refreshCandidates();
-      scheduleSave();
-      showOverlay(`FILL STEP ${index + 1}`);
-      announce(`Choose a chord for slot ${index + 1}`);
-    }
-  } else {
+  if (!pressed) {
     stopVoice(40 + index);
+    return;
   }
+  const decision = resolveStepPress(state, {
+    slotIndex: index,
+    shiftHeld,
+    deleteHeld,
+    lastAuditioned,
+  });
+  if (decision.action === 'clear') {
+    storeChordAt(index, null);
+    announce('Slot ' + (index + 1) + ' cleared');
+    return;
+  }
+  if (decision.action === 'store') {
+    storeChordAt(index, decision.chord);
+    announce('Stored ' + decision.chord.label + ' in slot ' + (index + 1));
+    return;
+  }
+  if (decision.action === 'need-audition') {
+    showOverlay('AUDITION A CHORD FIRST');
+    announce('Audition a chord first');
+    return;
+  }
+  if (decision.action === 'preview') {
+    const stored = decision.chord;
+    const notes = slotNotes(stored);
+    playVoice(40 + index, notes, velocity);
+    lastAuditioned = { ...stored, notes, label: nameChord(stored, { key: state.settings.key, scaleId: state.settings.scaleId }) };
+    currentLabel = lastAuditioned.label;
+    currentCategory = 'PROGRESSION ' + (index + 1);
+    showDisplayVoice(40 + index, {
+      notes,
+      chord: semanticChord(lastAuditioned),
+      rootPitchClass: wrap(state.settings.key + lastAuditioned.tonicOffset, 12),
+      label: currentLabel,
+      category: currentCategory,
+    });
+    selectedSlot = index;
+    commitContext(lastAuditioned);
+    dirty = true;
+    return;
+  }
+  if (decision.action !== 'gap-fill') return;
+  selectedSlot = index;
+  state.settings.mode = 'next';
+  const neighbors = progressionNeighbors(state.progression, index);
+  currentChord = neighbors.previousChord ? semanticChord(neighbors.previousChord) : null;
+  currentNotes = currentChord ? slotNotes(currentChord) : [];
+  if (displayVoices.voices.size === 0) {
+    displayChord = null;
+    displayNotes = [];
+    displayRootPc = null;
+  }
+  currentLabel = `Fill step ${index + 1}`;
+  currentCategory = neighbors.nextChord ? 'BETWEEN CHORDS' : 'NEXT CHORD';
+  refreshCandidates();
+  scheduleSave();
+  showOverlay(`FILL STEP ${index + 1}`);
+  announce(`Choose a chord for slot ${index + 1}`);
 }
 
 function updateCandidatesAndSlots(transposeSlots) {
@@ -687,25 +808,27 @@ function updateCandidatesAndSlots(transposeSlots) {
 
 function updateEncoder(index, rawValue) {
   const delta = decodeDelta(rawValue);
-  if (!delta) return;
+  const geared = encoderDetent(encoderAccum[index], delta, ENCODER_DETENT_GEAR);
+  encoderAccum[index] = geared.accumulator;
+  if (!geared.step) return;
   const settings = state.settings;
   const before = [settings.key, settings.scaleId, settings.colorDepth,
     settings.extensionBias, settings.inversionBias, settings.spread,
     settings.strumMs, settings.rate][index];
   if (index === 0) {
-    settings.key = wrap(settings.key + delta, 12);
+    settings.key = wrap(settings.key + geared.step, 12);
     if (settings.mode === 'root') focusPc = settings.key;
   }
   if (index === 1) {
     const scaleIndex = SCALES.findIndex((scale) => scale.id === settings.scaleId);
-    settings.scaleId = SCALES[wrap(scaleIndex + delta, SCALES.length)].id;
+    settings.scaleId = SCALES[wrap(scaleIndex + geared.step, SCALES.length)].id;
   }
-  if (index === 2) settings.colorDepth = clamp(settings.colorDepth + delta, 0, 2);
-  if (index === 3) settings.extensionBias = clamp(settings.extensionBias + delta, 0, 2);
-  if (index === 4) settings.inversionBias = clamp(settings.inversionBias + delta, 0, 3);
-  if (index === 5) settings.spread = clamp(settings.spread + delta, 0, 2);
-  if (index === 6) settings.strumMs = clamp(settings.strumMs + delta * 5, 0, 100);
-  if (index === 7) settings.rate = clamp(settings.rate + delta, 0, 4);
+  if (index === 2) settings.colorDepth = clamp(settings.colorDepth + geared.step, 0, 2);
+  if (index === 3) settings.extensionBias = clamp(settings.extensionBias + geared.step, 0, 2);
+  if (index === 4) settings.inversionBias = clamp(settings.inversionBias + geared.step, 0, 3);
+  if (index === 5) settings.spread = clamp(settings.spread + geared.step, 0, 2);
+  if (index === 6) settings.strumMs = clamp(settings.strumMs + geared.step * 5, 0, 100);
+  if (index === 7) settings.rate = clamp(settings.rate + geared.step, 0, 4);
   const after = [settings.key, settings.scaleId, settings.colorDepth,
     settings.extensionBias, settings.inversionBias, settings.spread,
     settings.strumMs, settings.rate][index];
@@ -872,6 +995,8 @@ globalThis.init = function init() {
   saveCountdown = -1;
   heldLeft = Array(16).fill(false);
   heldRightVelocity = Array(16).fill(100);
+  encoderAccum = Array(8).fill(0);
+  exportStatus = 'PRESS';
   commandSequence = 0;
   commandQueue = [];
   liveOwners = new Set();
@@ -982,6 +1107,12 @@ globalThis.onMidiMessageInternal = function onMidiMessageInternal(data) {
   }
   if (d1 === MoveMainButton && d2 > 0) {
     if (!menuOpen) {
+      if (shiftHeld) {
+        theoryView = !theoryView;
+        dirty = true;
+        announce(theoryView ? 'Theory view' : 'Main view');
+        return;
+      }
       cycleExplorationMode();
       return;
     }
@@ -992,6 +1123,10 @@ globalThis.onMidiMessageInternal = function onMidiMessageInternal(data) {
       } else {
         announce(`Testing ${ROUTE_LABELS[state.settings.previewRoute]} channel ${state.settings.channel + 1}`);
       }
+      return;
+    }
+    if (menuCursor === 5) {
+      exportProgression();
       return;
     }
     menuEditing = !menuEditing;
