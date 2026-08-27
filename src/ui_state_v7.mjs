@@ -266,8 +266,12 @@ export function takeLedBatch(queue, maximum = 8) {
 
 export const ENCODER_DETENT_GEAR = 2;
 export const OVERLAY_TICKS = 150;
-export const IMPRESSIVE_CHORDS_PRESETS_DIR = '/data/UserData/schwung/modules/midi_fx/impressive-chords/presets';
-export const CHORD_FINDER_EXPORTS_DIR = '/data/UserData/schwung/modules/tools/chord-finder/exports';
+export const IMPRESSIVE_CHORDS_DIR = '/data/UserData/schwung/modules/midi_fx/impressive-chords';
+export const IMPRESSIVE_CHORDS_PRESETS_DIR = `${IMPRESSIVE_CHORDS_DIR}/presets`;
+export const IMPRESSIVE_CHORDS_PRESETS_CHORDS_DIR = `${IMPRESSIVE_CHORDS_PRESETS_DIR}/chords`;
+export const IMPRESSIVE_CHORDS_SOURCES_DIR = `${IMPRESSIVE_CHORDS_DIR}/sources`;
+export const CHORD_FINDER_DIR = '/data/UserData/schwung/modules/tools/chord-finder';
+export const CHORD_FINDER_EXPORTS_DIR = `${CHORD_FINDER_DIR}/exports`;
 
 export function encoderDetent(accumulator, delta, gear = ENCODER_DETENT_GEAR) {
   if (!delta) return { accumulator, step: 0 };
@@ -298,6 +302,14 @@ export function formatImpressiveChordsFile(name, chords) {
     lines.push(`${chord.index}: ${chord.notes.join(',')}`);
   }
   return `${lines.join('\n')}\n`;
+}
+
+export function formatImpressiveChordsJson(chords) {
+  const data = {};
+  for (const chord of chords || []) {
+    data[String(chord.index)] = [...chord.notes];
+  }
+  return `${JSON.stringify(data)}\n`;
 }
 
 function variableLength(value) {

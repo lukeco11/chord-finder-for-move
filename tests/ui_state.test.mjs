@@ -10,6 +10,7 @@ import {
   encoderDetent,
   ENCODER_DETENT_GEAR,
   formatImpressiveChordsFile,
+  formatImpressiveChordsJson,
   formatMidiFile,
   latestHeldCandidate,
   leftPadIndex,
@@ -372,6 +373,10 @@ test('packs populated progression slots into an Impressive Chords preset file', 
   assert.equal(
     formatImpressiveChordsFile('Chord Finder C Major', packed),
     'Name: Chord Finder C Major\n0: 60,64,67\n1: 67,71,74\n',
+  );
+  assert.equal(
+    JSON.parse(formatImpressiveChordsJson(packed))['0'].join(','),
+    '60,64,67',
   );
 });
 

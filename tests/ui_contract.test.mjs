@@ -140,6 +140,8 @@ test('menu export writes Impressive Chords presets without replacing TEST OUTPUT
   assert.match(source, /'TEST OUTPUT', 'EXPORT CHORDS'/);
   assert.match(source, /menuCursor === 4[\s\S]{0,80}op: 'output_test'/);
   assert.match(source, /menuCursor === 5[\s\S]{0,80}exportProgression\(\)/);
-  assert.match(source, /IMPRESSIVE_CHORDS_PRESETS_DIR\}\/chord_finder\.chords/);
-  assert.match(source, /CHORD_FINDER_EXPORTS_DIR\}\/chord_finder\.mid/);
+  assert.match(source, /writeChordsToDir\(IMPRESSIVE_CHORDS_PRESETS_DIR, 'chord_finder\.chords'/);
+  assert.match(source, /writeChordsToDir\(IMPRESSIVE_CHORDS_SOURCES_DIR, 'chord_finder\.json'/);
+  assert.match(source, /closeMenuWithOverlay\('EXPORTED - SCAN PRESETS'/);
+  assert.doesNotMatch(source, /impressiveChordsAvailable/);
 });

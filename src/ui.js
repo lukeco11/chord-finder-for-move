@@ -20,12 +20,13 @@ import {
 } from './keyboard_v2.mjs';
 import {
   appendProgressionChord, assignProgressionSlot, bytesToHostString, clearHeldCandidates,
-  createUiState, encoderDetent, formatImpressiveChordsFile, formatMidiFile,
-  leftPadIndex, migrateSettings, nextExplorationMode, packedProgressionChords,
+  createUiState, encoderDetent, formatImpressiveChordsFile, formatImpressiveChordsJson,
+  formatMidiFile, leftPadIndex, migrateSettings, nextExplorationMode, packedProgressionChords,
   pressCandidate, progressionLength, progressionNeighbors, releaseCandidate,
   resolveStepPress, revoiceHeldCandidates, rightPadIndex, PREVIEW_ROUTES, ROUTES, takeLedBatch,
-  hostSupportsActiveMoveInject, CHORD_FINDER_EXPORTS_DIR,
-  ENCODER_DETENT_GEAR, IMPRESSIVE_CHORDS_PRESETS_DIR, OVERLAY_TICKS,
+  hostSupportsActiveMoveInject, CHORD_FINDER_DIR, CHORD_FINDER_EXPORTS_DIR,
+  ENCODER_DETENT_GEAR, IMPRESSIVE_CHORDS_PRESETS_CHORDS_DIR, IMPRESSIVE_CHORDS_PRESETS_DIR,
+  IMPRESSIVE_CHORDS_SOURCES_DIR, OVERLAY_TICKS,
 } from './ui_state_v7.mjs';
 
 const SETTINGS_PATH = '/data/UserData/schwung/modules/tools/chord-finder/settings.json';
@@ -76,6 +77,7 @@ let dirty = true;
 let heldLeft = Array(16).fill(false);
 let heldRightVelocity = Array(16).fill(100);
 let encoderAccum = Array(8).fill(0);
+let exportStatus = 'PRESS';
 let commandSequence = 0;
 let commandQueue = [];
 let liveOwners = new Set();
@@ -196,47 +198,56 @@ function writeHostFile(path, content) {
   return typeof host_write_file === 'function' && host_write_file(path, content) === true;
 }
 
-function impressiveChordsAvailable() {
-  if (typeof host_get_module_metadata === 'function' && host_get_module_metadata('impressive-chords')) {
-    return true;
-  }
-  return typeof host_file_exists === 'function'
-    && host_file_exists('/data/UserData/schwung/modules/midi_fx/impressive-chords') === true;
+function ensureHostDir(path) {
+  return typeof host_ensure_dir === 'function' && host_ensure_dir(path) === true;
+}
+
+function writeChordsToDir(dir, filename, content) {
+  ensureHostDir(dir);
+  return writeHostFile(`${dir}/${filename}`, content);
+}
+
+function closeMenuWithOverlay(text, spoken) {
+  menuOpen = false;
+  menuEditing = false;
+  showOverlay(text);
+  announce(spoken || text);
 }
 
 function exportProgression() {
   const chords = packedProgressionChords(state.progression, (chord) => slotNotes(chord));
   if (!chords.length) {
-    showOverlay('NO CHORDS TO EXPORT');
-    announce('No chords to export');
+    exportStatus = 'EMPTY';
+    closeMenuWithOverlay('NO CHORDS TO EXPORT', 'Store chords in steps first, then export');
     return;
   }
   const label = `Chord Finder ${KEY_NAMES[state.settings.key]} ${getScale(state.settings.scaleId).name}`;
   const chordsText = formatImpressiveChordsFile(label, chords);
+  const chordsJson = formatImpressiveChordsJson(chords);
   const midiBytes = formatMidiFile(chords, { gate: state.settings.gate, beatsPerChord: 1 });
-  let chordsWritten = false;
-  let midiWritten = false;
+  const wroteIc = [
+    writeChordsToDir(IMPRESSIVE_CHORDS_PRESETS_DIR, 'chord_finder.chords', chordsText),
+    writeChordsToDir(IMPRESSIVE_CHORDS_PRESETS_CHORDS_DIR, 'chord_finder.chords', chordsText),
+    writeChordsToDir(IMPRESSIVE_CHORDS_SOURCES_DIR, 'chord_finder.json', chordsJson),
+  ].some(Boolean);
+  const wroteLocal = [
+    writeChordsToDir(CHORD_FINDER_DIR, 'chord_finder.chords', chordsText),
+    writeChordsToDir(CHORD_FINDER_EXPORTS_DIR, 'chord_finder.chords', chordsText),
+    writeChordsToDir(CHORD_FINDER_EXPORTS_DIR, 'chord_finder.mid', bytesToHostString(midiBytes)),
+  ].some(Boolean);
 
-  if (impressiveChordsAvailable()) {
-    if (typeof host_ensure_dir === 'function') host_ensure_dir(IMPRESSIVE_CHORDS_PRESETS_DIR);
-    chordsWritten = writeHostFile(`${IMPRESSIVE_CHORDS_PRESETS_DIR}/chord_finder.chords`, chordsText);
-  }
-  if (typeof host_ensure_dir === 'function') host_ensure_dir(CHORD_FINDER_EXPORTS_DIR);
-  midiWritten = writeHostFile(`${CHORD_FINDER_EXPORTS_DIR}/chord_finder.mid`, bytesToHostString(midiBytes));
-  writeHostFile(`${CHORD_FINDER_EXPORTS_DIR}/chord_finder.chords`, chordsText);
-
-  if (chordsWritten) {
-    showOverlay(`EXPORTED ${chords.length} CHORDS`);
-    announce(`Exported ${chords.length} chords to Impressive Chords`);
+  if (wroteIc) {
+    exportStatus = 'SAVED';
+    closeMenuWithOverlay('EXPORTED - SCAN PRESETS', `Exported ${chords.length} chords. Open Impressive Chords and turn Scan Presets on.`);
     return;
   }
-  if (midiWritten) {
-    showOverlay('SAVED MIDI EXPORT');
-    announce('Impressive Chords is not installed. Saved a MIDI export.');
+  if (wroteLocal) {
+    exportStatus = 'LOCAL';
+    closeMenuWithOverlay('SAVED IN CHORD FINDER', 'Saved a local export. Impressive Chords preset folder was not writable.');
     return;
   }
-  showOverlay(impressiveChordsAvailable() ? 'EXPORT FAILED' : 'INSTALL IMPRESSIVE CHORDS');
-  announce(impressiveChordsAvailable() ? 'Export failed' : 'Install Impressive Chords to export a preset');
+  exportStatus = 'FAIL';
+  closeMenuWithOverlay('EXPORT FAILED', 'Export failed');
 }
 
 function loadSettings() {
@@ -350,6 +361,7 @@ function menuValue(index) {
   if (index === 1) return routeUnavailable(settings.route) ? `${settings.route.toUpperCase()}!` : ROUTE_LABELS[settings.route];
   if (index === 2) return routeUnavailable(settings.previewRoute) ? `${settings.previewRoute.toUpperCase()}!` : ROUTE_LABELS[settings.previewRoute];
   if (index === 3) return String(settings.gate) + '%';
+  if (index === 5) return exportStatus;
   return 'PRESS';
 }
 
@@ -923,6 +935,7 @@ globalThis.init = function init() {
   heldLeft = Array(16).fill(false);
   heldRightVelocity = Array(16).fill(100);
   encoderAccum = Array(8).fill(0);
+  exportStatus = 'PRESS';
   commandSequence = 0;
   commandQueue = [];
   liveOwners = new Set();
